@@ -1,11 +1,13 @@
 dataSources:
   shardwallet1:
-    jdbcUrl: ${POSTGRES_DB1_URL}
+    dataSourceClassName: com.zaxxer.hikari.HikariDataSource
+    jdbcUrl: jdbc:postgresql://localhost:5432/shardwallet1
     username: ${POSTGRES_USER}
     password: ${POSTGRES_PASS}
     driverClassName: org.postgresql.Driver
   shardwallet2:
-    jdbcUrl: ${POSTGRES_DB2_URL}
+    dataSourceClassName: com.zaxxer.hikari.HikariDataSource
+    jdbcUrl: jdbc:postgresql://localhost:5432/shardwallet2
     username: ${POSTGRES_USER}
     password: ${POSTGRES_PASS}
     driverClassName: org.postgresql.Driver
@@ -13,8 +15,8 @@ dataSources:
 rules:
   - !SHARDING
     tables:
-      user:
-        actualDataNodes: shardwallet$->{1..2}.user
+      users:
+        actualDataNodes: shardwallet$->{1..2}.users
         databaseStrategy:
           standard:
             shardingColumn: id
