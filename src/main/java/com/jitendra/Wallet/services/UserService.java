@@ -28,4 +28,18 @@ public class UserService {
         
         return new UserResponseDTO(savedUser.getId(), savedUser.getName(), savedUser.getEmail());
     }
+
+    public UserResponseDTO getUserById(Long id) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("User not found with id: " + id));
+        log.info("User fetched with id: {}", id);
+        return new UserResponseDTO(user.getId(), user.getName(), user.getEmail());
+    }
+
+    public UserResponseDTO getUserByName(String name) {
+        User user = userRepository.findByName(name)
+                .orElseThrow(() -> new RuntimeException("User not found with name: " + name));
+        log.info("User fetched with name: {}", name);
+        return new UserResponseDTO(user.getId(), user.getName(), user.getEmail());
+    }
 }
