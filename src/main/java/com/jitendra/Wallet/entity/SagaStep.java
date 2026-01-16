@@ -15,7 +15,7 @@ import jakarta.persistence.Index;
 import jakarta.persistence.UniqueConstraint;
 import jakarta.persistence.Column;
 import jakarta.persistence.EntityListeners;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import lombok.Data;
@@ -83,15 +83,15 @@ public class SagaStep {
     // When step was created/initialized - distinguishes from actually started
     @CreatedDate
     @Column(name = "created_date", nullable = false, updatable = false)
-    private LocalDateTime createdDate;
+    private Instant createdDate;
 
     // When step actually started execution (different from creation time)
     @Column(name = "started_date")
-    private LocalDateTime startedDate;
+    private Instant startedDate;
 
     // When step completed successfully or failed
     @Column(name = "completed_date")
-    private LocalDateTime completedDate;
+    private Instant completedDate;
 
     // Optimistic locking for concurrent updates - prevents race conditions
     @Version

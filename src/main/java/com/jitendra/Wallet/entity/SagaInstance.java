@@ -12,6 +12,7 @@ import jakarta.persistence.OneToMany;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Index;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
@@ -57,7 +58,7 @@ public class SagaInstance {
 
     // Track when saga completed or failed - important for audit and metrics
     @Column(name = "completed_date")
-    private LocalDateTime completedDate;
+    private Instant completedDate;
 
     // Track when compensation process completed (for rollback scenarios)
     @Column(name = "compensated_date")
@@ -91,12 +92,12 @@ public class SagaInstance {
     // Audit field - automatically populated on creation
     @CreatedDate
     @Column(name = "created_date", nullable = false, updatable = false)
-    private LocalDateTime createdDate;
+    private Instant createdDate;
 
     // Audit field - automatically updated on every modification
     @LastModifiedDate
-    @Column(name = "update_date", nullable = false)
-    private LocalDateTime updateDate;
+    @Column(name = "updated_date", nullable = false)
+    private Instant updatedDate;
 
     // Bidirectional relationship - saga instance contains multiple steps
     @OneToMany(mappedBy = "sagaInstance", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
