@@ -9,7 +9,7 @@ public interface SagaStep {
      * @param context - Shared context containing saga data
      * @throws Exception - If execution fails
      */
-    void execute(SagaContext context) throws Exception;
+    boolean execute(SagaContext context) throws Exception;
     
     /**
      * Compensate/rollback this step's changes.
@@ -19,7 +19,7 @@ public interface SagaStep {
      * @param context - Shared context containing saga data
      * @throws Exception - If compensation fails (may require manual intervention)
      */
-    void compensate(SagaContext context) throws Exception;
+    boolean compensate(SagaContext context) throws Exception;
     
     /**
      * Get the unique name of this step
