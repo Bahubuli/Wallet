@@ -51,8 +51,6 @@ public class UpdateTransactionStatus implements SagaStep {
         Transaction transaction = transactionRepository.findById(transactionId)
             .orElseThrow(() -> new RuntimeException("Transaction not found for transactionId: " + transactionId));
 
-        // when we know the type conversation is safe then it is good to ingore warnings
-        @SuppressWarnings("unchecked")
         TransactionStatus previousStatus = (TransactionStatus) context.getData().get("transactionStatusBefore");
         context.put("transactionStatusBefore", transaction.getStatus());
 
