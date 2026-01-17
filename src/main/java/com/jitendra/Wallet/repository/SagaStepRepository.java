@@ -14,8 +14,8 @@ import com.jitendra.Wallet.entity.StepStatus;
 @Repository
 public interface SagaStepRepository extends JpaRepository<SagaStep, Long> {
     
-    List<SagaStep> findBySagaInstanceId(Long sagaInstanceId);
+    List<SagaStep> findBySagaInstance_Id(Long sagaInstanceId);
 
-    @Query("SELECT s FROM SagaStep s WHERE s.sagaInstanceId = :sagaInstanceId AND s.status = :status")
-    List<SagaStep> findCompletedSagaStepsBySagaInstanceId(Long sagaInstanceId, String status);
+    @Query("SELECT s FROM SagaStep s WHERE s.sagaInstance.id = :sagaInstanceId AND s.status = :status")
+    List<SagaStep> findCompletedSagaStepsBySagaInstanceId(@Param("sagaInstanceId") Long sagaInstanceId, @Param("status") StepStatus status);
 }

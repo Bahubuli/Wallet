@@ -24,6 +24,30 @@ rules:
         keyGenerateStrategy:
           column: id
           keyGeneratorName: snowflake
+      wallet:
+        actualDataNodes: shardwallet$->{1..2}.wallet
+        databaseStrategy:
+          standard:
+            shardingColumn: user_id
+            shardingAlgorithmName: db-inline
+      saga_instance:
+        actualDataNodes: shardwallet$->{1..2}.saga_instance
+        databaseStrategy:
+          standard:
+            shardingColumn: id
+            shardingAlgorithmName: db-inline
+      saga_step:
+        actualDataNodes: shardwallet$->{1..2}.saga_step
+        databaseStrategy:
+          standard:
+            shardingColumn: saga_instance_id
+            shardingAlgorithmName: db-inline
+      transactions:
+        actualDataNodes: shardwallet$->{1..2}.transactions
+        databaseStrategy:
+          standard:
+            shardingColumn: id
+            shardingAlgorithmName: db-inline
     defaultDatabaseStrategy:
       standard:
         shardingColumn: id

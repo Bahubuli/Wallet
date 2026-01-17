@@ -1,5 +1,6 @@
 package com.jitendra.Wallet.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.cdimascio.dotenv.Dotenv;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -15,6 +16,11 @@ import java.util.stream.Collectors;
 
 @Configuration
 public class DataSourceConfig {
+
+    @Bean
+    public ObjectMapper objectMapper() {
+        return new ObjectMapper();
+    }
 
     @Bean
     public DataSource dataSource() throws Exception {
