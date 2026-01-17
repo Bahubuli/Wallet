@@ -1,28 +1,38 @@
 package com.jitendra.Wallet.services.saga.steps;
 
+import java.util.Map;
+
 import org.springframework.stereotype.Component;
+
+import com.jitendra.Wallet.services.saga.SagaStep;
 
 @Component
 public class SagaStepFactory {
-    public static enum SagaStepType {
-       DEBIT_SOURCE_WALLET,
-       CREDIT_DESTINATION_WALLET,
-       UPDATE_TRANSACTION_STATUS
+    
+    public enum SagaStepType {
+        DEBIT_SOURCE_WALLET,
+        CREDIT_DESTINATION_WALLET,
+        UPDATE_TRANSACTION_STATUS
     }
 
-    // here we have a problem that is these classes have dependencies
-    // so each of these classes need repository instances
+    private final Map<SagaStepType, SagaStep> stepMap;
     
-    public static SagaStep getSagaStep(SagaStepType stepType) {
-        switch (stepType) {
-            case DEBIT_SOURCE_WALLET:
-                return new DebitSourceWalletStep();
-            case CREDIT_DESTINATION_WALLET:
-                return new CreditDestinationWalletStep();
-            case UPDATE_TRANSACTION_STATUS:
-                return new UpdateTransactionStatusStep();
-            default:
-                throw new IllegalArgumentException("Invalid Saga Step Type");
+    public SagaStepFactory(
+            DebitSourceWalletStep debitSourceWalletStep,
+            CreditDestinationWalletStep creditDestinationWalletStep,
+            UpdateTransactionStatus updateTransactionStatus) {
+        this.stepMap = Map.of(
+            SagaStepType.DEBIT_SOURCE_WALLET, debitSourceWalletStep,
+            SagaStepType.CREDIT_DESTINATION_WALLET, creditDestinationWalletStep,
+            SagaStepType.UPDATE_TRANSACTION_STATUS, updateTransactionStatus
+        );
+    }
+    
+    public SagaStep getSagaStep(SagaStepType stepType) {
+        SagaStep step = stepMap.get(stepType);
+        if (step == null) {
+            throw new IllegalArgumentException("Invalid Saga Step Type: " + stepType);
         }
+        return step;
     }
 }
