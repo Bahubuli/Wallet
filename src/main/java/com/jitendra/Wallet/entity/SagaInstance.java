@@ -17,11 +17,14 @@ import java.time.LocalDateTime;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+
 import jakarta.persistence.EntityListeners;
 import jakarta.persistence.Column;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
+
 import java.util.List;
 
 @Entity
@@ -33,6 +36,7 @@ import java.util.List;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
+@Builder
 public class SagaInstance {
 
     @Id
@@ -53,7 +57,7 @@ public class SagaInstance {
     private String context;
 
     // Name of the current step being executed
-    @Column(name = "current_step", nullable = false)
+    @Column(name = "current_step")
     private String currentStep;
 
     // Track when saga completed or failed - important for audit and metrics
