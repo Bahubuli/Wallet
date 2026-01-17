@@ -43,13 +43,28 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
     }
 
     @Override
-    public boolean executeStep(Long sagaInstanceId) {
+    public boolean executeStep(Long sagaInstanceId, String stepName) {
+        
+        SagaInstance sagaInstance = sagaInstanceRepository.findById(sagaInstanceId)
+            .orElseThrow(() -> new RuntimeException("SagaInstance not found with id: " + sagaInstanceId));
+        
+        // now we have sagaInstance object we also need saga step object in order to execute the step
+        // for that we need to create the object for saga step 
+        // now similar to saga instance we don't want one exact step class for all the saga types
+        // rather we want to have different step classes for different saga types
+        // so for that we can create a factory class which will return the step object based
+        //  on the saga type and step name
+        // once we have the step object we can call the execute method on it to execute the step
+
+        
+
+        
         // Execute step implementation
         return false;
     }
 
     @Override
-    public boolean compensateStep(Long sagaInstanceId) {
+    public boolean compensateStep(Long sagaInstanceId, String stepName) {
         // Compensate step implementation
         return false;
     }

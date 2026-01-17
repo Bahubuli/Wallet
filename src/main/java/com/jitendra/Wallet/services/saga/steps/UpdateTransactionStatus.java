@@ -7,6 +7,7 @@ import com.jitendra.Wallet.entity.TransactionStatus;
 import com.jitendra.Wallet.repository.TransactionRepository;
 import com.jitendra.Wallet.services.saga.SagaContext;
 import com.jitendra.Wallet.services.saga.SagaStep;
+import com.jitendra.Wallet.services.saga.steps.SagaStepFactory.SagaStepType;
 
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -65,7 +66,7 @@ public class UpdateTransactionStatus implements SagaStep {
 
     @Override
     public String getStepName() {
-        return "UPDATE_TRANSACTION_STATUS";
+        return SagaStepType.UPDATE_TRANSACTION_STATUS.toString();
     }
 
     @Override

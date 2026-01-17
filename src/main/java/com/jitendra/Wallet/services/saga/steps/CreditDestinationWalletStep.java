@@ -8,6 +8,7 @@ import com.jitendra.Wallet.entity.Wallet;
 import com.jitendra.Wallet.repository.WalletRepository;
 import com.jitendra.Wallet.services.saga.SagaContext;
 import com.jitendra.Wallet.services.saga.SagaStep;
+import com.jitendra.Wallet.services.saga.steps.SagaStepFactory.SagaStepType;
 
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -80,7 +81,7 @@ public class CreditDestinationWalletStep implements SagaStep {
 
     @Override
     public String getStepName() {
-        return "CREDIT_DESTINATION_WALLET";
+        return SagaStepType.CREDIT_DESTINATION_WALLET.toString();
     }
 
     @Override

@@ -8,6 +8,7 @@ import com.jitendra.Wallet.entity.Wallet;
 import com.jitendra.Wallet.repository.WalletRepository;
 import com.jitendra.Wallet.services.saga.SagaContext;
 import com.jitendra.Wallet.services.saga.SagaStep;
+import com.jitendra.Wallet.services.saga.steps.SagaStepFactory.SagaStepType;
 
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -19,7 +20,7 @@ import lombok.extern.slf4j.Slf4j;
 public class DebitSourceWalletStep implements SagaStep {
 
     private final WalletRepository walletRepository;
-
+    
     @Override
     @Transactional
     public boolean execute(SagaContext context) throws Exception {
@@ -68,7 +69,7 @@ public class DebitSourceWalletStep implements SagaStep {
 
     @Override
     public String getStepName() {
-        return "DEBIT_SOURCE_WALLET";
+        return SagaStepType.DEBIT_SOURCE_WALLET.toString();
     }
 
     @Override
