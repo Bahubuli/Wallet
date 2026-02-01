@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS users (
     email VARCHAR(255)
 );
 
--- Create wallet table (non-sharded)
+-- Create wallet table (sharded by user_id)
 CREATE TABLE IF NOT EXISTS wallet (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL,
@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS wallet (
     balance DECIMAL(19,2) NOT NULL DEFAULT 0.00
 );
 
--- Create saga_instance table (non-sharded)
+-- Create saga_instance table (sharded by id)
 CREATE TABLE IF NOT EXISTS saga_instance (
     id BIGSERIAL PRIMARY KEY,
     saga_type VARCHAR(100) NOT NULL,
@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS saga_instance (
     updated_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create saga_step table (non-sharded)
+-- Create saga_step table (sharded by saga_instance_id)
 CREATE TABLE IF NOT EXISTS saga_step (
     id BIGSERIAL PRIMARY KEY,
     saga_instance_id BIGINT NOT NULL,
@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS saga_step (
     CONSTRAINT fk_saga_step_instance FOREIGN KEY (saga_instance_id) REFERENCES saga_instance(id)
 );
 
--- Create transactions table (non-sharded)
+-- Create transactions table (sharded by id)
 CREATE TABLE IF NOT EXISTS transactions (
     id BIGSERIAL PRIMARY KEY,
     description VARCHAR(255) NOT NULL,

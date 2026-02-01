@@ -61,8 +61,11 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
         // so for that we can create a factory class which will return the step object based
         //  on the saga type and step name
         // once we have the step object we can call the execute method on it to execute the step
-        
         // this is saga step object for methods 
+
+        //With @Autowired, you'd need to know at compile time which specific step class you want,
+        //but here the step name comes dynamically from the database or workflow configuration.
+
        SagaStepInterface step = sagaStepFactory.getSagaStepByName(stepName);
        if(step == null){
             log.error("Saga step not found for step name: {}", stepName);
@@ -72,15 +75,12 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
        // if saga step is not found then create a new saga step with status PENDING
 
         // this is saga step entity from database
-       SagaStep sagaStep = sagaStepRepository.findBySagaInstanceIdAndStatus(sagaInstanceId, StepStatus.PENDING)
-                           .stream()
-                           .filter(s->s.getStepName().equals(stepName))
-                           .findFirst()
+       SagaStep sagaStep = sagaStepRepository.findBySagaInstanceIdAndStatusAndStepName(sagaInstanceId, StepStatus.PENDING, stepName)
                            .orElse(
-                            SagaStep.builder().
-                            sagaInstance(sagaInstance).
-                            stepName(stepName).
-                            status(StepStatus.PENDING).build());
+                            SagaStep.builder()
+                            .sagaInstance(sagaInstance)
+                            .stepName(stepName)
+                            .status(StepStatus.PENDING).build());
        
         
         if(sagaStep.getId() == null){
