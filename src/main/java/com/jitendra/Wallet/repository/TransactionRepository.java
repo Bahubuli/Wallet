@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import com.jitendra.Wallet.entity.Transaction;
+import com.jitendra.Wallet.entity.TransactionStatus;
 
 @Repository
 public interface TransactionRepository extends JpaRepository<Transaction, Long> {
@@ -51,5 +52,9 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
     // Find transactions where wallet ID is either source or destination
     @Query("SELECT t FROM Transaction t WHERE t.sourceWalletId = :walletId OR t.destinationWalletId = :walletId")
     List<Transaction> findByWalletId(@Param("walletId") Long walletId);
+    
+    // Find transactions by status using enum
+    @Query("SELECT t FROM Transaction t WHERE t.status = :status")
+    List<Transaction> findByStatus(@Param("status") TransactionStatus status);
 
 }
