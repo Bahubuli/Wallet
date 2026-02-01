@@ -86,8 +86,36 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
         if(sagaStep.getId() == null){
             sagaStep = sagaStepRepository.save(sagaStep);
         }
-        // Execute step implementation
-        return false;
+
+        //1. till now we fetched instacne and step from database or created new step if not found
+        //2. now we need to execute the step
+        try {
+              SagaContext context = objectMapper.readValue(sagaInstance.getContext(), SagaContext.class); 
+              sagaStep.setStatus(StepStatus.RUNNING);
+              sagaStepRepository.save(sagaStep);
+              
+              boolean result = step.execute(context);
+
+              if(result){
+                sagaStep.setStatus(StepStatus.COMPLETED);
+                sagaStepRepository.save(sagaStep);
+                log.info("Saga step {} completed for sagaInstanceId {}", stepName, sagaInstanceId);
+                return true;
+                }else{
+                    sagaStep.setStatus(StepStatus.FAILED);
+                    sagaStepRepository.save(sagaStep);
+                    log.error("Saga step {} failed for sagaInstanceId {}", stepName, sagaInstanceId);
+                    return false;
+                }
+        
+            } catch (Exception e) {
+            // TODO: handle exception
+            sagaStep.setStatus(StepStatus.FAILED);
+            sagaStepRepository.save(sagaStep);
+            log.error("Saga step {} failed for sagaInstanceId {} with error: {}", stepName, sagaInstanceId, e.getMessage());
+            return false;
+        }
+      
     }
 
     @Override
