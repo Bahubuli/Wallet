@@ -1,5 +1,8 @@
 package com.jitendra.Wallet.services.saga;
 
+import java.util.Collections;
+import java.util.List;
+
 import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -82,13 +85,10 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
                             .stepName(stepName)
                             .status(StepStatus.PENDING).build());
        
-        
         if(sagaStep.getId() == null){
             sagaStep = sagaStepRepository.save(sagaStep);
         }
 
-        //1. till now we fetched instacne and step from database or created new step if not found
-        //2. now we need to execute the step
         try {
               SagaContext context = objectMapper.readValue(sagaInstance.getContext(), SagaContext.class); 
               sagaStep.setStatus(StepStatus.RUNNING);
@@ -109,7 +109,6 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
                 }
         
             } catch (Exception e) {
-            // TODO: handle exception
             sagaStep.setStatus(StepStatus.FAILED);
             sagaStepRepository.save(sagaStep);
             log.error("Saga step {} failed for sagaInstanceId {} with error: {}", stepName, sagaInstanceId, e.getMessage());
@@ -164,9 +163,65 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
         // Get saga instance implementation
         return null;
     }
+
     @Override
     public void compensateSaga(Long sagaInstanceId) {
-        // Compensate saga implementation
+        try {
+            SagaInstance sagaInstance = sagaInstanceRepository.findById(sagaInstanceId)
+                .orElseThrow(() -> new RuntimeException("SagaInstance not found with id: " + sagaInstanceId));
+            
+            // Find all completed steps for this saga instance
+            List<SagaStep> completedSteps = sagaStepRepository.findBySagaInstanceIdAndStatus(sagaInstanceId, StepStatus.COMPLETED);
+            
+            if(completedSteps.isEmpty()) {
+                log.info("No completed steps found for saga compensation, sagaInstanceId: {}", sagaInstanceId);
+                sagaInstance.setStatus(SagaStatus.COMPENSATED);
+                sagaInstanceRepository.save(sagaInstance);
+                return;
+            }
+            
+            log.info("Starting saga compensation for sagaInstanceId: {} with {} completed steps", sagaInstanceId, completedSteps.size());
+            
+            // Update saga status to compensating
+            sagaInstance.setStatus(SagaStatus.COMPENSATING);
+            sagaInstanceRepository.save(sagaInstance);
+            
+            // Compensate steps in reverse order (LIFO)
+            Collections.reverse(completedSteps);
+            
+            boolean allStepsCompensated = true;
+            
+            for(SagaStep step : completedSteps) {
+                try {
+                    boolean compensated = compensateStep(sagaInstanceId, step.getStepName());
+                    if(!compensated) {
+                        allStepsCompensated = false;
+                        log.error("Failed to compensate step: {} for sagaInstanceId: {}", step.getStepName(), sagaInstanceId);
+                        break;
+                    }
+                } catch (Exception e) {
+                    allStepsCompensated = false;
+                    log.error("Exception occurred while compensating step: {} for sagaInstanceId: {}, error: {}", 
+                             step.getStepName(), sagaInstanceId, e.getMessage());
+                    break;
+                }
+            }
+            
+            // Update final saga status
+            if(allStepsCompensated) {
+                sagaInstance.setStatus(SagaStatus.COMPENSATED);
+                sagaInstanceRepository.save(sagaInstance);
+                log.info("Saga compensation completed successfully for sagaInstanceId: {}", sagaInstanceId);
+            } else {
+                failSaga(sagaInstanceId);
+                log.error("Saga compensation failed for sagaInstanceId: {}", sagaInstanceId);
+            }
+            
+        } catch (Exception e) {
+            log.error("Failed to compensate saga with id: {}, error: {}", sagaInstanceId, e.getMessage());
+            failSaga(sagaInstanceId);
+            throw new RuntimeException("Failed to compensate saga", e);
+        }
     }
 
     @Override
