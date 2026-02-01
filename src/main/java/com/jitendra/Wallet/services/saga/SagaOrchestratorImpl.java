@@ -120,8 +120,44 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
 
     @Override
     public boolean compensateStep(Long sagaInstanceId, String stepName) {
-        // Compensate step implementation
-        return false;
+        
+        SagaInstance sagaInstance = sagaInstanceRepository.findById(sagaInstanceId)
+            .orElseThrow(() -> new RuntimeException("SagaInstance not found with id: " + sagaInstanceId));
+        
+        SagaStepInterface step = sagaStepFactory.getSagaStepByName(stepName);
+        if(step == null){
+            log.error("Saga step not found for step name: {}", stepName);
+            throw new RuntimeException("Saga step not found for step name: " + stepName);
+        }
+        
+        // fetch the completed saga step from database to compensate it
+        SagaStep sagaStep = sagaStepRepository.findBySagaInstanceIdAndStatusAndStepName(sagaInstanceId, StepStatus.COMPLETED, stepName)
+                            .orElseThrow(() -> new RuntimeException("Completed saga step not found for step name: " + stepName));
+        
+        try {
+            SagaContext context = objectMapper.readValue(sagaInstance.getContext(), SagaContext.class);
+            sagaStep.setStatus(StepStatus.RUNNING);
+            sagaStepRepository.save(sagaStep);
+            
+            boolean result = step.compensate(context);
+            
+            if(result){
+                sagaStep.setStatus(StepStatus.COMPENSATED);
+                sagaStepRepository.save(sagaStep);
+                log.info("Saga step {} compensated for sagaInstanceId {}", stepName, sagaInstanceId);
+                return true;
+            } else {
+                sagaStep.setStatus(StepStatus.FAILED);
+                sagaStepRepository.save(sagaStep);
+                log.error("Saga step {} compensation failed for sagaInstanceId {}", stepName, sagaInstanceId);
+                return false;
+            }
+        } catch (Exception e) {
+            sagaStep.setStatus(StepStatus.FAILED);
+            sagaStepRepository.save(sagaStep);
+            log.error("Saga step {} compensation failed for sagaInstanceId {} with error: {}", stepName, sagaInstanceId, e.getMessage());
+            return false;
+        }
     }
     @Override
     public SagaInstance getSagaInstance(Long sagaInstanceId) {
