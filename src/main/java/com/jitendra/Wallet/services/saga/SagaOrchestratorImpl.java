@@ -4,6 +4,7 @@ import java.util.Collections;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jitendra.Wallet.entity.SagaInstance;
@@ -29,6 +30,7 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
     private final SagaStepRepository sagaStepRepository;
 
     @Override
+    @Transactional
     public Long startSaga(SagaContext context) {
         try{
             String contextJson = objectMapper.writeValueAsString(context);
@@ -52,6 +54,7 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
     }
 
     @Override
+    @Transactional
     public boolean executeStep(Long sagaInstanceId, String stepName) {
         
         SagaInstance sagaInstance = sagaInstanceRepository.findById(sagaInstanceId)
@@ -118,6 +121,7 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
     }
 
     @Override
+    @Transactional
     public boolean compensateStep(Long sagaInstanceId, String stepName) {
         
         SagaInstance sagaInstance = sagaInstanceRepository.findById(sagaInstanceId)
@@ -165,6 +169,7 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
     }
 
     @Override
+    @Transactional
     public void compensateSaga(Long sagaInstanceId) {
         try {
             SagaInstance sagaInstance = sagaInstanceRepository.findById(sagaInstanceId)
@@ -225,13 +230,35 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
     }
 
     @Override
+    @Transactional
     public void failSaga(Long sagaInstanceId) {
-        // Fail saga implementation
+        try {
+            SagaInstance sagaInstance = sagaInstanceRepository.findById(sagaInstanceId)
+                .orElseThrow(() -> new RuntimeException("SagaInstance not found with id: " + sagaInstanceId));
+            
+            sagaInstance.setStatus(SagaStatus.FAILED);
+            sagaInstanceRepository.save(sagaInstance);
+            log.error("Saga marked as failed for sagaInstanceId: {}", sagaInstanceId);
+        } catch (Exception e) {
+            log.error("Failed to mark saga as failed for id: {}, error: {}", sagaInstanceId, e.getMessage());
+            throw new RuntimeException("Failed to mark saga as failed", e);
+        }
     }
 
     @Override
+    @Transactional
     public void completeSaga(Long sagaInstanceId) {
-        // Complete saga implementation
+        try {
+            SagaInstance sagaInstance = sagaInstanceRepository.findById(sagaInstanceId)
+                .orElseThrow(() -> new RuntimeException("SagaInstance not found with id: " + sagaInstanceId));
+            
+            sagaInstance.setStatus(SagaStatus.COMPLETED);
+            sagaInstanceRepository.save(sagaInstance);
+            log.info("Saga completed successfully for sagaInstanceId: {}", sagaInstanceId);
+        } catch (Exception e) {
+            log.error("Failed to mark saga as completed for id: {}, error: {}", sagaInstanceId, e.getMessage());
+            throw new RuntimeException("Failed to mark saga as completed", e);
+        }
     }
     
 }
