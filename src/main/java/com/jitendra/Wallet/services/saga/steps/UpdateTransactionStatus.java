@@ -6,7 +6,7 @@ import com.jitendra.Wallet.entity.Transaction;
 import com.jitendra.Wallet.entity.TransactionStatus;
 import com.jitendra.Wallet.repository.TransactionRepository;
 import com.jitendra.Wallet.services.saga.SagaContext;
-import com.jitendra.Wallet.services.saga.SagaStep;
+import com.jitendra.Wallet.services.saga.SagaStepInterface;
 import com.jitendra.Wallet.services.saga.steps.SagaStepFactory.SagaStepType;
 
 import jakarta.transaction.Transactional;
@@ -16,7 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 @RequiredArgsConstructor
 @Slf4j
-public class UpdateTransactionStatus implements SagaStep {
+public class UpdateTransactionStatus implements SagaStepInterface {
 
     private final TransactionRepository transactionRepository;
 

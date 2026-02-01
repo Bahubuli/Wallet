@@ -11,6 +11,8 @@ import org.springframework.stereotype.Repository;
 
 import com.jitendra.Wallet.entity.SagaInstance;
 import com.jitendra.Wallet.entity.SagaStatus;
+import com.jitendra.Wallet.entity.SagaStep;
+import com.jitendra.Wallet.entity.StepStatus;
 
 @Repository
 public interface SagaInstanceRepository extends JpaRepository<SagaInstance, Long> {
@@ -23,7 +25,6 @@ public interface SagaInstanceRepository extends JpaRepository<SagaInstance, Long
     
     // Find saga instances by saga type and status
     List<SagaInstance> findBySagaTypeAndStatus(String sagaType, SagaStatus status);
-    
     // Find saga instances that are stuck/zombie (expired timeout)
     @Query("SELECT s FROM SagaInstance s WHERE s.expiryTime IS NOT NULL AND s.expiryTime <= :currentTime AND s.status IN ('STARTED', 'RUNNING', 'COMPENSATING')")
     List<SagaInstance> findExpiredSagaInstances(@Param("currentTime") LocalDateTime currentTime);

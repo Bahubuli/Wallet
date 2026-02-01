@@ -19,7 +19,7 @@ import java.time.Instant;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
-import groovy.transform.builder.Builder;
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
@@ -61,7 +61,7 @@ public class SagaStep {
     // Current status of this specific step
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
-    private StepStatus status = StepStatus.PENDING;
+    private StepStatus status;
 
     // Name of compensation method/action to execute if rollback is needed
     @Column(name = "compensation_action", length = 100)

@@ -1,7 +1,7 @@
 package com.jitendra.Wallet.services.saga;
 
 
-public interface SagaStep {
+public interface SagaStepInterface {
     
     /**
      * Execute this step's action.

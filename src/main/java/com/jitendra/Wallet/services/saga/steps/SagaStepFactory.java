@@ -4,7 +4,7 @@ import java.util.Map;
 
 import org.springframework.stereotype.Component;
 
-import com.jitendra.Wallet.services.saga.SagaStep;
+import com.jitendra.Wallet.services.saga.SagaStepInterface;
 
 @Component
 public class SagaStepFactory {
@@ -15,7 +15,7 @@ public class SagaStepFactory {
         UPDATE_TRANSACTION_STATUS
     }
 
-    private final Map<SagaStepType, SagaStep> stepMap;
+    private final Map<SagaStepType, SagaStepInterface> stepMap;
     
     public SagaStepFactory(
             DebitSourceWalletStep debitSourceWalletStep,
@@ -28,11 +28,24 @@ public class SagaStepFactory {
         );
     }
     
-    public SagaStep getSagaStep(SagaStepType stepType) {
-        SagaStep step = stepMap.get(stepType);
+    public SagaStepInterface getSagaStep(SagaStepType stepType) {
+        SagaStepInterface step = stepMap.get(stepType);
         if (step == null) {
             throw new IllegalArgumentException("Invalid Saga Step Type: " + stepType);
         }
         return step;
+    }
+
+    /**
+     * Returns the SagaStepInterface for the given step name (case-sensitive, must match enum name).
+     * Throws IllegalArgumentException if the step name is invalid.
+     */
+    public SagaStepInterface getSagaStepByName(String stepName) {
+        try {
+            SagaStepType stepType = SagaStepType.valueOf(stepName);
+            return getSagaStep(stepType);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid Saga Step Name: " + stepName, e);
+        }
     }
 }
