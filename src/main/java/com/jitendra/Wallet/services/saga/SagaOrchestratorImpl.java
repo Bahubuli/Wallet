@@ -80,7 +80,7 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
        // fetch the saga step from database, by sagaInstanceId and stepName
        // if saga step is not found then create a new saga step with status PENDING
 
-        // this is saga step entity from database
+        // this is saga step entity from database, hai to theek verna build kr do
        SagaStep sagaStep = sagaStepRepository.findBySagaInstanceIdAndStatusAndStepName(sagaInstanceId, StepStatus.PENDING, stepName)
                            .orElse(
                             SagaStep.builder()
@@ -104,7 +104,8 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
                 sagaStepRepository.save(sagaStep);
                 log.info("Saga step {} completed for sagaInstanceId {}", stepName, sagaInstanceId);
                 return true;
-                }else{
+                }
+            else{
                     sagaStep.setStatus(StepStatus.FAILED);
                     sagaStepRepository.save(sagaStep);
                     log.error("Saga step {} failed for sagaInstanceId {}", stepName, sagaInstanceId);

@@ -13,7 +13,7 @@ import com.jitendra.Wallet.dto.TransactionResponseDTO;
 import com.jitendra.Wallet.entity.Transaction;
 import com.jitendra.Wallet.entity.TransactionStatus;
 import com.jitendra.Wallet.repository.TransactionRepository;
-import com.jitendra.Wallet.repository.WalletRepository;
+
 import com.jitendra.Wallet.services.saga.steps.SagaStepFactory;
 import com.jitendra.Wallet.services.saga.steps.SagaStepFactory.SagaStepType;
 import com.jitendra.Wallet.services.saga.steps.SagaStepFactory.SagaType;
@@ -32,7 +32,6 @@ public class TransferSagaService {
 
     private final SagaOrchestrator sagaOrchestrator;
     private final SagaStepFactory sagaStepFactory;
-    private final WalletRepository walletRepository;
     private final TransactionRepository transactionRepository;
 
     /**
@@ -48,17 +47,6 @@ public class TransferSagaService {
                 transactionRequest.getSourceWalletId(),
                 transactionRequest.getDestinationWalletId(),
                 transactionRequest.getAmount());
-
-        // Validate source wallet exists
-        if (!walletRepository.existsById(transactionRequest.getSourceWalletId())) {
-            throw new RuntimeException("Source wallet not found with id: " + transactionRequest.getSourceWalletId());
-        }
-
-        // Validate destination wallet exists
-        if (!walletRepository.existsById(transactionRequest.getDestinationWalletId())) {
-            throw new RuntimeException(
-                    "Destination wallet not found with id: " + transactionRequest.getDestinationWalletId());
-        }
 
         // Create Transaction with PENDING status using builder pattern
         Instant now = Instant.now();

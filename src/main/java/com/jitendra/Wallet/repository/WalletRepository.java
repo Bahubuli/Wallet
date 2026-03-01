@@ -18,15 +18,8 @@ public interface WalletRepository extends JpaRepository<Wallet, Long> {
     
     List<Wallet> findByUserId(Long userId);
 
-    // Acquires a database-level pessimistic write lock:
-    // Prevents other transactions from reading or writing
-    // the locked row until the current transaction completes.
-    // Ensures data consistency in concurrent scenarios,
-    //  such as wallet balance updates.
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    // Custom JPQL query to fetch Wallet by id
     @Query("SELECT w FROM Wallet w WHERE w.id = :id")
-    // Binds method parameter 'id' to query parameter ':id'
     Optional<Wallet> findByIdWithLock(@Param("id") Long id);
     
 }

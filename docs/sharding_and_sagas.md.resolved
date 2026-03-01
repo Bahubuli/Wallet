@@ -1,0 +1,69 @@
+# Saga Pattern in Distributed Transactions & Database Sharding
+
+When dealing with a single monolithic database, traditional database transactions (ACID properties - Atomicity, Consistency, Isolation, Durability) work perfectly. If an error occurs, the database can easily rollback all changes across different tables because everything is within the same physical instance.
+
+However, as systems scale, a single database becomes a bottleneck. To solve this, architectures evolve towards distributed databases, microservices, and **database sharding**.
+
+## 1. The Challenge of Sharding and Distributed Data
+
+**Database Sharding** involves partitioning your data across multiple distinct database instances (shards). For example, in a Wallet application:
+*   User A's wallet might live on Database Shard 1 (e.g., US Server).
+*   User B's wallet might live on Database Shard 2 (e.g., EU Server).
+
+If User A wants to send money to User B, you are now dealing with a **Distributed Transaction**. A single ACID transaction cannot natively wrap operations across two different, independent database servers.
+
+### Why Traditional ACID (e.g., Two-Phase Commit / 2PC) Fails at Scale:
+To guarantee ACID properties across multiple distributed databases, systems historically used protocols like the Two-Phase Commit (2PC). However, 2PC has severe limitations:
+1.  **Synchronous & Blocking:** It locks resources on *all* participating databases until the transaction fully commits or rolls back. If one shard is slow to respond, the entire transaction (and all associated locks) hangs.
+2.  **Single Point of Failure:** The coordinator managing the 2PC becomes a critical bottleneck.
+3.  **No Cloud/Microservice Support:** Many modern NoSQL databases and microservice communication protocols (like HTTP/REST or async messaging) do not natively support 2PC.
+
+## 2. How the Saga Pattern Solves the Distributed Transaction Problem
+
+The **Saga Pattern** abandons the idea of distributed ACID transactions and instead focuses on **BASE** (Basically Available, Soft state, Eventual consistency). 
+
+A Saga breaks a distributed transaction into a sequence of smaller, localized ACID transactions.
+
+### How it works in a Sharded Wallet Environment:
+
+Instead of opening one giant transaction across Shard 1 and Shard 2:
+
+1.  **Local Transaction 1 (Shard 1):** The orchestrator tells Shard 1 to debit User A's wallet. This is a standard, fast, local ACID transaction. The [SagaStep](file:///d:/Code/Wallet/src/main/java/com/jitendra/Wallet/services/saga/steps/SagaStepFactory.java#48-55) is marked as `COMPLETED`.
+2.  **Local Transaction 2 (Shard 2):** The orchestrator then tells Shard 2 to credit User B's wallet. This is *another* independent, local ACID transaction. The [SagaStep](file:///d:/Code/Wallet/src/main/java/com/jitendra/Wallet/services/saga/steps/SagaStepFactory.java#48-55) is marked as `COMPLETED`.
+
+### Handling Failures with Compensating Transactions:
+
+What happens if User A is debited on Shard 1, but Shard 2 is down and User B cannot be credited? We can't use a traditional rollback because Local Transaction 1 has already committed.
+
+This is where **Compensating Transactions** come in.
+
+If the orchestrated transaction fails at Step 2:
+1.  The Saga Orchestrator detects the failure.
+2.  It looks at its execution log (the `saga_instance` and `saga_step` tables) and sees that Step 1 (Debit) completed successfully.
+3.  It initiates a **Compensating Transaction** specifically designed to undo Step 1. It executes the [compensate()](file:///d:/Code/Wallet/src/main/java/com/jitendra/Wallet/services/saga/steps/UpdateTransactionStatus.java#46-66) method for the debit step, which issues a new local ACID transaction on Shard 1 to *credit* User A the money back.
+
+### What happens if the Compensating Transaction also fails?
+
+This is a critical failure scenario in the Saga pattern. If a compensation fails (for example, Shard 1 goes down while trying to refund User A after a failed Shard 2 transaction), the system is left in an inconsistent state. To handle this, Sagas employ several robust strategies:
+
+#### 1. Idempotency & Retries (Automated Recovery)
+The first line of defense is simply trying again. Network blips, temporary database unavailability, or timeouts are common. The Saga Orchestrator will automatically retry the failed compensating transaction.
+*   **Exponential Backoff**: Instead of retrying continuously (which can overwhelm a recovering database), the orchestrator waits for increasingly longer intervals (e.g., 2s, 4s, 8s, 16s) between attempts.
+*   **The Crucial Need for Idempotency**: A compensating transaction **must** be idempotent. This means no matter how many times the [compensate()](file:///d:/Code/Wallet/src/main/java/com/jitendra/Wallet/services/saga/steps/UpdateTransactionStatus.java#46-66) method executes, the end result is the same as if it executed exactly once. 
+    *   *Why?* If the orchestrator sent a "Credit User A $50" command, but a network timeout occurred before getting a response, the orchestrator doesn't know if the database actually processed the credit or not. If it retries, it might credit User A $50 a *second* time (double refund). To be idempotent, the orchestrator needs to pass a unique "Compensation ID" or rely on the `SagaInstanceId` so the database knows it has already processed this specific refund and can safely ignore duplicate requests.
+
+#### 2. Dead Letter Queue (DLQ) / Persistent Failure State
+Retrying forever consumes resources and can block other transactions. Modern Saga Orchestrators have a configurable `maxRetries` (in this project, you can see `maxRetries = 3` in [SagaInstance](file:///d:/Code/Wallet/src/main/java/com/jitendra/Wallet/entity/SagaInstance.java#30-111)).
+*   **Persisting the Failure**: Once the retry limit is exhausted, the orchestrator stops trying. It updates the [SagaInstance](file:///d:/Code/Wallet/src/main/java/com/jitendra/Wallet/entity/SagaInstance.java#30-111) record in the database with a critical failure status like `FAILED_TO_COMPENSATE` or `FATAL_ERROR`.
+*   **The DLQ**: In message-broker environments (like Kafka or RabbitMQ), the failed saga event is physically moved out of the main processing flow and into a "Dead Letter Queue" (DLQ). In this database-driven project, placing the [SagaInstance](file:///d:/Code/Wallet/src/main/java/com/jitendra/Wallet/entity/SagaInstance.java#30-111) in the `FAILED_TO_COMPENSATE` status effectively turns the database table itself into a DLQ. This isolates the problematic transaction without halting the rest of the application.
+
+#### 3. Manual Intervention / Batch Reconciliation (Human/Script Recovery)
+At this point, all automated safety nets have failed. The system cannot fix itself, and human (or custom script) intervention is required to restore consistency and balance the ledgers.
+*   **Alerting**: The system triggers high-priority alerts to the On-Call Engineers/Administrators, notifying them of the failed compensation.
+*   **Investigation**: The administrator uses the persistent saga log (the [SagaInstance](file:///d:/Code/Wallet/src/main/java/com/jitendra/Wallet/entity/SagaInstance.java#30-111) context and the [SagaStep](file:///d:/Code/Wallet/src/main/java/com/jitendra/Wallet/services/saga/steps/SagaStepFactory.java#48-55) execution trace) to understand the exact state of the system. *Did the money leave User A? Yes. Did it reach User B? No. Did the refund to User A fail? Yes.*
+*   **Reconciliation (The Fix)**: The administrator manually connects to the database shard and manually executes SQL to refund User A. Alternatively, they create an asynchronous batch script that safely processes all transactions sitting in the DLQ during off-peak hours.
+*   **Closing the Saga**: Once the issue is resolved manually, the DBA or admin updates the [SagaInstance](file:///d:/Code/Wallet/src/main/java/com/jitendra/Wallet/entity/SagaInstance.java#30-111) status to `COMPENSATED_MANUALLY`, finally closing the loop and keeping the application states clean.
+
+## 3. Key Takeaway
+
+By using the Saga pattern, you ensure data consistency across sharded databases or microservices without enduring the severe performance penalties and deadlocks associated with distributed locking protocols. It provides **Eventual Consistency**—even if an intermediate state exists temporarily, the system guarantees it will eventually arrive at a verified success or a fully compensated rollback.
