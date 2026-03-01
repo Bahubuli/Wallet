@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 -- Create wallet table (sharded by user_id)
+-- BASELINE: This represents the original wallet structure
 CREATE TABLE IF NOT EXISTS wallet (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL,
