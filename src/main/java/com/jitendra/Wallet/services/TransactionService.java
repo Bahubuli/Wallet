@@ -35,7 +35,6 @@ public class TransactionService {
          * @return TransactionResponseDTO with transaction details including saga
          *         instance ID
          */
-        @Transactional
         public TransactionResponseDTO createTransaction(TransactionRequestDTO transactionRequest) {
                 log.info("Creating transaction from wallet {} to wallet {} with amount {}",
                                 transactionRequest.getSourceWalletId(),

@@ -6,7 +6,6 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import com.jitendra.Wallet.dto.TransactionRequestDTO;
 import com.jitendra.Wallet.dto.TransactionResponseDTO;
@@ -41,7 +40,6 @@ public class TransferSagaService {
      * @param transactionRequest The transfer request details
      * @return TransactionResponseDTO with transaction and saga details
      */
-    @Transactional
     public TransactionResponseDTO initiateTransfer(TransactionRequestDTO transactionRequest) {
         log.info("Initiating transfer saga from wallet {} to wallet {} with amount {}",
                 transactionRequest.getSourceWalletId(),
@@ -57,6 +55,7 @@ public class TransferSagaService {
                 .amount(transactionRequest.getAmount())
                 .type(transactionRequest.getType())
                 .status(TransactionStatus.PENDING)
+                .sagaInstanceId(-1L) // <--- Temporary dummy ID to pass NOT NULL constraint
                 .createdDate(now)
                 .updatedDate(now)
                 .build();
@@ -73,6 +72,7 @@ public class TransferSagaService {
                 transactionRequest.getDescription() != null ? transactionRequest.getDescription() : "");
         contextData.put("transactionType", transactionRequest.getType());
         contextData.put("transactionId", savedTransaction.getId());
+        contextData.put("newStatus", TransactionStatus.SUCCESS.name());
 
         SagaContext sagaContext = SagaContext.builder()
                 .sagaType(SagaType.TRANSACTION_TRANSFER.name())
@@ -114,13 +114,14 @@ public class TransferSagaService {
 
         boolean allStepsSucceeded = true;
         String failedStepName = null;
+        int stepOrder = 1;
 
         for (SagaStepType stepType : steps) {
             String stepName = stepType.name();
             log.info("Executing saga step: {} for sagaInstanceId: {}", stepName, sagaInstanceId);
 
             try {
-                boolean stepResult = sagaOrchestrator.executeStep(sagaInstanceId, stepName);
+                boolean stepResult = sagaOrchestrator.executeStep(sagaInstanceId, stepName, stepOrder++);
 
                 if (!stepResult) {
                     log.error("Saga step {} failed for sagaInstanceId: {}", stepName, sagaInstanceId);

@@ -32,22 +32,21 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
     @Override
     @Transactional
     public Long startSaga(SagaContext context) {
-        try{
+        try {
             String contextJson = objectMapper.writeValueAsString(context);
 
             SagaInstance sagaInstance = SagaInstance
-            .builder()
-            .sagaType(context.getSagaType())
-            .context(contextJson)
-            .status(SagaStatus.STARTED)
-            .build();
+                    .builder()
+                    .sagaType(context.getSagaType())
+                    .context(contextJson)
+                    .status(SagaStatus.STARTED)
+                    .build();
 
             sagaInstance = sagaInstanceRepository.save(sagaInstance);
 
             log.info("Saga started with id: {}", sagaInstance.getId());
             return sagaInstance.getId();
-        }
-        catch(Exception e){
+        } catch (Exception e) {
             log.error("Failed to start saga: {}", e.getMessage());
             throw new RuntimeException("Failed to start saga", e);
         }
@@ -55,97 +54,106 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
 
     @Override
     @Transactional
-    public boolean executeStep(Long sagaInstanceId, String stepName) {
-        
+    public boolean executeStep(Long sagaInstanceId, String stepName, Integer stepOrder) {
+
         SagaInstance sagaInstance = sagaInstanceRepository.findById(sagaInstanceId)
-            .orElseThrow(() -> new RuntimeException("SagaInstance not found with id: " + sagaInstanceId));
-        
-        // now we have sagaInstance object we also need saga step object in order to execute the step
-        // for that we need to create the object for saga step 
-        // now similar to saga instance we don't want one exact step class for all the saga types
+                .orElseThrow(() -> new RuntimeException("SagaInstance not found with id: " + sagaInstanceId));
+
+        // now we have sagaInstance object we also need saga step object in order to
+        // execute the step
+        // for that we need to create the object for saga step
+        // now similar to saga instance we don't want one exact step class for all the
+        // saga types
         // rather we want to have different step classes for different saga types
-        // so for that we can create a factory class which will return the step object based
-        //  on the saga type and step name
-        // once we have the step object we can call the execute method on it to execute the step
-        // this is saga step object for methods 
+        // so for that we can create a factory class which will return the step object
+        // based
+        // on the saga type and step name
+        // once we have the step object we can call the execute method on it to execute
+        // the step
+        // this is saga step object for methods
 
-        //With @Autowired, you'd need to know at compile time which specific step class you want,
-        //but here the step name comes dynamically from the database or workflow configuration.
+        // With @Autowired, you'd need to know at compile time which specific step class
+        // you want,
+        // but here the step name comes dynamically from the database or workflow
+        // configuration.
 
-       SagaStepInterface step = sagaStepFactory.getSagaStepByName(stepName);
-       if(step == null){
+        SagaStepInterface step = sagaStepFactory.getSagaStepByName(stepName);
+        if (step == null) {
             log.error("Saga step not found for step name: {}", stepName);
             throw new RuntimeException("Saga step not found for step name: " + stepName);
         }
-       // fetch the saga step from database, by sagaInstanceId and stepName
-       // if saga step is not found then create a new saga step with status PENDING
+        // fetch the saga step from database, by sagaInstanceId and stepName
+        // if saga step is not found then create a new saga step with status PENDING
 
         // this is saga step entity from database, hai to theek verna build kr do
-       SagaStep sagaStep = sagaStepRepository.findBySagaInstanceIdAndStatusAndStepName(sagaInstanceId, StepStatus.PENDING, stepName)
-                           .orElse(
-                            SagaStep.builder()
-                            .sagaInstance(sagaInstance)
-                            .stepName(stepName)
-                            .status(StepStatus.PENDING).build());
-       
-        if(sagaStep.getId() == null){
+        SagaStep sagaStep = sagaStepRepository
+                .findBySagaInstanceIdAndStatusAndStepName(sagaInstanceId, StepStatus.PENDING, stepName)
+                .orElse(
+                        SagaStep.builder()
+                                .sagaInstance(sagaInstance)
+                                .stepName(stepName)
+                                .stepOrder(stepOrder)
+                                .status(StepStatus.PENDING).build());
+
+        if (sagaStep.getId() == null) {
             sagaStep = sagaStepRepository.save(sagaStep);
         }
 
         try {
-              SagaContext context = objectMapper.readValue(sagaInstance.getContext(), SagaContext.class); 
-              sagaStep.setStatus(StepStatus.RUNNING);
-              sagaStepRepository.save(sagaStep);
-              
-              boolean result = step.execute(context);
+            SagaContext context = objectMapper.readValue(sagaInstance.getContext(), SagaContext.class);
+            sagaStep.setStatus(StepStatus.RUNNING);
+            sagaStepRepository.save(sagaStep);
 
-              if(result){
+            boolean result = step.execute(context);
+
+            if (result) {
                 sagaStep.setStatus(StepStatus.COMPLETED);
                 sagaStepRepository.save(sagaStep);
                 log.info("Saga step {} completed for sagaInstanceId {}", stepName, sagaInstanceId);
                 return true;
-                }
-            else{
-                    sagaStep.setStatus(StepStatus.FAILED);
-                    sagaStepRepository.save(sagaStep);
-                    log.error("Saga step {} failed for sagaInstanceId {}", stepName, sagaInstanceId);
-                    return false;
-                }
-        
-            } catch (Exception e) {
+            } else {
+                sagaStep.setStatus(StepStatus.FAILED);
+                sagaStepRepository.save(sagaStep);
+                log.error("Saga step {} failed for sagaInstanceId {}", stepName, sagaInstanceId);
+                return false;
+            }
+
+        } catch (Exception e) {
             sagaStep.setStatus(StepStatus.FAILED);
             sagaStepRepository.save(sagaStep);
-            log.error("Saga step {} failed for sagaInstanceId {} with error: {}", stepName, sagaInstanceId, e.getMessage());
+            log.error("Saga step {} failed for sagaInstanceId {} with error: {}", stepName, sagaInstanceId,
+                    e.getMessage());
             return false;
         }
-      
+
     }
 
     @Override
     @Transactional
     public boolean compensateStep(Long sagaInstanceId, String stepName) {
-        
+
         SagaInstance sagaInstance = sagaInstanceRepository.findById(sagaInstanceId)
-            .orElseThrow(() -> new RuntimeException("SagaInstance not found with id: " + sagaInstanceId));
-        
+                .orElseThrow(() -> new RuntimeException("SagaInstance not found with id: " + sagaInstanceId));
+
         SagaStepInterface step = sagaStepFactory.getSagaStepByName(stepName);
-        if(step == null){
+        if (step == null) {
             log.error("Saga step not found for step name: {}", stepName);
             throw new RuntimeException("Saga step not found for step name: " + stepName);
         }
-        
+
         // fetch the completed saga step from database to compensate it
-        SagaStep sagaStep = sagaStepRepository.findBySagaInstanceIdAndStatusAndStepName(sagaInstanceId, StepStatus.COMPLETED, stepName)
-                            .orElseThrow(() -> new RuntimeException("Completed saga step not found for step name: " + stepName));
-        
+        SagaStep sagaStep = sagaStepRepository
+                .findBySagaInstanceIdAndStatusAndStepName(sagaInstanceId, StepStatus.COMPLETED, stepName)
+                .orElseThrow(() -> new RuntimeException("Completed saga step not found for step name: " + stepName));
+
         try {
             SagaContext context = objectMapper.readValue(sagaInstance.getContext(), SagaContext.class);
             sagaStep.setStatus(StepStatus.RUNNING);
             sagaStepRepository.save(sagaStep);
-            
+
             boolean result = step.compensate(context);
-            
-            if(result){
+
+            if (result) {
                 sagaStep.setStatus(StepStatus.COMPENSATED);
                 sagaStepRepository.save(sagaStep);
                 log.info("Saga step {} compensated for sagaInstanceId {}", stepName, sagaInstanceId);
@@ -159,10 +167,12 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
         } catch (Exception e) {
             sagaStep.setStatus(StepStatus.FAILED);
             sagaStepRepository.save(sagaStep);
-            log.error("Saga step {} compensation failed for sagaInstanceId {} with error: {}", stepName, sagaInstanceId, e.getMessage());
+            log.error("Saga step {} compensation failed for sagaInstanceId {} with error: {}", stepName, sagaInstanceId,
+                    e.getMessage());
             return false;
         }
     }
+
     @Override
     public SagaInstance getSagaInstance(Long sagaInstanceId) {
         // Get saga instance implementation
@@ -174,47 +184,50 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
     public void compensateSaga(Long sagaInstanceId) {
         try {
             SagaInstance sagaInstance = sagaInstanceRepository.findById(sagaInstanceId)
-                .orElseThrow(() -> new RuntimeException("SagaInstance not found with id: " + sagaInstanceId));
-            
+                    .orElseThrow(() -> new RuntimeException("SagaInstance not found with id: " + sagaInstanceId));
+
             // Find all completed steps for this saga instance
-            List<SagaStep> completedSteps = sagaStepRepository.findBySagaInstanceIdAndStatus(sagaInstanceId, StepStatus.COMPLETED);
-            
-            if(completedSteps.isEmpty()) {
+            List<SagaStep> completedSteps = sagaStepRepository.findBySagaInstanceIdAndStatus(sagaInstanceId,
+                    StepStatus.COMPLETED);
+
+            if (completedSteps.isEmpty()) {
                 log.info("No completed steps found for saga compensation, sagaInstanceId: {}", sagaInstanceId);
                 sagaInstance.setStatus(SagaStatus.COMPENSATED);
                 sagaInstanceRepository.save(sagaInstance);
                 return;
             }
-            
-            log.info("Starting saga compensation for sagaInstanceId: {} with {} completed steps", sagaInstanceId, completedSteps.size());
-            
+
+            log.info("Starting saga compensation for sagaInstanceId: {} with {} completed steps", sagaInstanceId,
+                    completedSteps.size());
+
             // Update saga status to compensating
             sagaInstance.setStatus(SagaStatus.COMPENSATING);
             sagaInstanceRepository.save(sagaInstance);
-            
+
             // Compensate steps in reverse order (LIFO)
             Collections.reverse(completedSteps);
-            
+
             boolean allStepsCompensated = true;
-            
-            for(SagaStep step : completedSteps) {
+
+            for (SagaStep step : completedSteps) {
                 try {
                     boolean compensated = compensateStep(sagaInstanceId, step.getStepName());
-                    if(!compensated) {
+                    if (!compensated) {
                         allStepsCompensated = false;
-                        log.error("Failed to compensate step: {} for sagaInstanceId: {}", step.getStepName(), sagaInstanceId);
+                        log.error("Failed to compensate step: {} for sagaInstanceId: {}", step.getStepName(),
+                                sagaInstanceId);
                         break;
                     }
                 } catch (Exception e) {
                     allStepsCompensated = false;
-                    log.error("Exception occurred while compensating step: {} for sagaInstanceId: {}, error: {}", 
-                             step.getStepName(), sagaInstanceId, e.getMessage());
+                    log.error("Exception occurred while compensating step: {} for sagaInstanceId: {}, error: {}",
+                            step.getStepName(), sagaInstanceId, e.getMessage());
                     break;
                 }
             }
-            
+
             // Update final saga status
-            if(allStepsCompensated) {
+            if (allStepsCompensated) {
                 sagaInstance.setStatus(SagaStatus.COMPENSATED);
                 sagaInstanceRepository.save(sagaInstance);
                 log.info("Saga compensation completed successfully for sagaInstanceId: {}", sagaInstanceId);
@@ -222,7 +235,7 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
                 failSaga(sagaInstanceId);
                 log.error("Saga compensation failed for sagaInstanceId: {}", sagaInstanceId);
             }
-            
+
         } catch (Exception e) {
             log.error("Failed to compensate saga with id: {}, error: {}", sagaInstanceId, e.getMessage());
             failSaga(sagaInstanceId);
@@ -235,8 +248,8 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
     public void failSaga(Long sagaInstanceId) {
         try {
             SagaInstance sagaInstance = sagaInstanceRepository.findById(sagaInstanceId)
-                .orElseThrow(() -> new RuntimeException("SagaInstance not found with id: " + sagaInstanceId));
-            
+                    .orElseThrow(() -> new RuntimeException("SagaInstance not found with id: " + sagaInstanceId));
+
             sagaInstance.setStatus(SagaStatus.FAILED);
             sagaInstanceRepository.save(sagaInstance);
             log.error("Saga marked as failed for sagaInstanceId: {}", sagaInstanceId);
@@ -251,8 +264,8 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
     public void completeSaga(Long sagaInstanceId) {
         try {
             SagaInstance sagaInstance = sagaInstanceRepository.findById(sagaInstanceId)
-                .orElseThrow(() -> new RuntimeException("SagaInstance not found with id: " + sagaInstanceId));
-            
+                    .orElseThrow(() -> new RuntimeException("SagaInstance not found with id: " + sagaInstanceId));
+
             sagaInstance.setStatus(SagaStatus.COMPLETED);
             sagaInstanceRepository.save(sagaInstance);
             log.info("Saga completed successfully for sagaInstanceId: {}", sagaInstanceId);
@@ -261,5 +274,5 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
             throw new RuntimeException("Failed to mark saga as completed", e);
         }
     }
-    
+
 }
