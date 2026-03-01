@@ -10,7 +10,8 @@ import com.jitendra.Wallet.services.saga.SagaContext;
 import com.jitendra.Wallet.services.saga.SagaStepInterface;
 import com.jitendra.Wallet.services.saga.steps.SagaStepFactory.SagaStepType;
 
-import jakarta.transaction.Transactional;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -20,22 +21,23 @@ import lombok.extern.slf4j.Slf4j;
 public class DebitSourceWalletStep implements SagaStepInterface {
 
     private final WalletRepository walletRepository;
-    
+
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean execute(SagaContext context) throws Exception {
         log.info("Executing DebitSourceWalletStep for sagaInstanceId: {}", context.getSagaInstanceId());
 
-        BigDecimal amount = (BigDecimal) context.getData().get("amount");
-        Long sourceWalletId = (Long) context.getData().get("sourceWalletId");
+        BigDecimal amount = new BigDecimal(context.getData().get("amount").toString());
+        Long sourceWalletId = Long.valueOf(context.getData().get("sourceWalletId").toString());
 
         Wallet wallet = walletRepository.findByIdWithLock(sourceWalletId)
-            .orElseThrow(() -> new RuntimeException("Source Wallet not Found"));
+                .orElseThrow(() -> new RuntimeException("Source Wallet not Found"));
 
         context.put("fromWalletBalanceBeforeDebit", wallet.getBalance());
 
-        if(!wallet.hasSufficientBalance(amount)) {
-            log.error("Insufficient balance in source wallet id: {}. Available balance: {}, Required amount: {}", sourceWalletId, wallet.getBalance(), amount);
+        if (!wallet.hasSufficientBalance(amount)) {
+            log.error("Insufficient balance in source wallet id: {}. Available balance: {}, Required amount: {}",
+                    sourceWalletId, wallet.getBalance(), amount);
             throw new RuntimeException("Insufficient balance in source wallet id: " + sourceWalletId);
         }
 
@@ -43,19 +45,21 @@ public class DebitSourceWalletStep implements SagaStepInterface {
         walletRepository.save(wallet);
 
         context.put("fromWalletBalanceAfterDebit", wallet.getBalance());
-        log.info("Debited amount: {} from source wallet id: {}. New balance: {}", amount, sourceWalletId, wallet.getBalance());
+        log.info("Debited amount: {} from source wallet id: {}. New balance: {}", amount, sourceWalletId,
+                wallet.getBalance());
         return true;
     }
 
     @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean compensate(SagaContext context) throws Exception {
         log.info("Compensating DebitSourceWalletStep for sagaInstanceId: {}", context.getSagaInstanceId());
 
-        BigDecimal amount = (BigDecimal) context.getData().get("amount");
-        Long sourceWalletId = (Long) context.getData().get("sourceWalletId");
+        BigDecimal amount = new BigDecimal(context.getData().get("amount").toString());
+        Long sourceWalletId = Long.valueOf(context.getData().get("sourceWalletId").toString());
 
         Wallet wallet = walletRepository.findByIdWithLock(sourceWalletId)
-            .orElseThrow(() -> new RuntimeException("Source Wallet not Found"));
+                .orElseThrow(() -> new RuntimeException("Source Wallet not Found"));
 
         context.put("fromWalletBalanceBeforeDebit", wallet.getBalance());
 
@@ -63,7 +67,8 @@ public class DebitSourceWalletStep implements SagaStepInterface {
         walletRepository.save(wallet);
 
         context.put("fromWalletBalanceAfterDebit", wallet.getBalance());
-        log.info("Credited amount: {} back to source wallet id: {}. New balance: {}", amount, sourceWalletId, wallet.getBalance());
+        log.info("Credited amount: {} back to source wallet id: {}. New balance: {}", amount, sourceWalletId,
+                wallet.getBalance());
         return true;
     }
 

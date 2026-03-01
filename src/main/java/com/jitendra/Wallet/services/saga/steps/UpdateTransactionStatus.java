@@ -9,7 +9,8 @@ import com.jitendra.Wallet.services.saga.SagaContext;
 import com.jitendra.Wallet.services.saga.SagaStepInterface;
 import com.jitendra.Wallet.services.saga.steps.SagaStepFactory.SagaStepType;
 
-import jakarta.transaction.Transactional;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -21,15 +22,15 @@ public class UpdateTransactionStatus implements SagaStepInterface {
     private final TransactionRepository transactionRepository;
 
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean execute(SagaContext context) throws Exception {
         log.info("Executing UpdateTransactionStatus for sagaInstanceId: {}", context.getSagaInstanceId());
 
-        Long transactionId = (Long) context.getData().get("transactionId");
-        String newStatus = (String) context.getData().get("newStatus");
+        Long transactionId = Long.valueOf(context.getData().get("transactionId").toString());
+        String newStatus = context.getData().get("newStatus").toString();
 
         Transaction transaction = transactionRepository.findById(transactionId)
-            .orElseThrow(() -> new RuntimeException("Transaction not found for transactionId: " + transactionId));
+                .orElseThrow(() -> new RuntimeException("Transaction not found for transactionId: " + transactionId));
 
         TransactionStatus statusBeforeUpdate = transaction.getStatus();
         context.put("transactionStatusBefore", statusBeforeUpdate);
@@ -38,29 +39,31 @@ public class UpdateTransactionStatus implements SagaStepInterface {
         transactionRepository.save(transaction);
 
         context.put("transactionStatusAfter", transaction.getStatus());
-        log.info("Updated transaction id: {} status from {} to {}. SagaInstanceId: {}", 
-            transactionId, statusBeforeUpdate, newStatus, context.getSagaInstanceId());
+        log.info("Updated transaction id: {} status from {} to {}. SagaInstanceId: {}",
+                transactionId, statusBeforeUpdate, newStatus, context.getSagaInstanceId());
         return true;
     }
 
     @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean compensate(SagaContext context) throws Exception {
         log.info("Compensating UpdateTransactionStatus for sagaInstanceId: {}", context.getSagaInstanceId());
 
-        Long transactionId = (Long) context.getData().get("transactionId");
+        Long transactionId = Long.valueOf(context.getData().get("transactionId").toString());
 
         Transaction transaction = transactionRepository.findById(transactionId)
-            .orElseThrow(() -> new RuntimeException("Transaction not found for transactionId: " + transactionId));
+                .orElseThrow(() -> new RuntimeException("Transaction not found for transactionId: " + transactionId));
 
-        TransactionStatus previousStatus = (TransactionStatus) context.getData().get("transactionStatusBefore");
+        TransactionStatus previousStatus = TransactionStatus
+                .valueOf(context.getData().get("transactionStatusBefore").toString());
         context.put("transactionStatusBefore", transaction.getStatus());
 
         transaction.setStatus(previousStatus);
         transactionRepository.save(transaction);
 
         context.put("transactionStatusAfter", transaction.getStatus());
-        log.info("Reverted transaction id: {} status back to {}. SagaInstanceId: {}", 
-            transactionId, previousStatus, context.getSagaInstanceId());
+        log.info("Reverted transaction id: {} status back to {}. SagaInstanceId: {}",
+                transactionId, previousStatus, context.getSagaInstanceId());
         return true;
     }
 
