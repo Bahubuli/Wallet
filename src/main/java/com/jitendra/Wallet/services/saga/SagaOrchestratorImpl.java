@@ -109,6 +109,11 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
             if (result) {
                 sagaStep.setStatus(StepStatus.COMPLETED);
                 sagaStepRepository.save(sagaStep);
+
+                // Serialize and persist any data added to context during step execution
+                sagaInstance.setContext(objectMapper.writeValueAsString(context));
+                sagaInstanceRepository.save(sagaInstance);
+
                 log.info("Saga step {} completed for sagaInstanceId {}", stepName, sagaInstanceId);
                 return true;
             } else {
@@ -156,6 +161,11 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
             if (result) {
                 sagaStep.setStatus(StepStatus.COMPENSATED);
                 sagaStepRepository.save(sagaStep);
+
+                // Serialize and persist any data added to context during compensation execution
+                sagaInstance.setContext(objectMapper.writeValueAsString(context));
+                sagaInstanceRepository.save(sagaInstance);
+
                 log.info("Saga step {} compensated for sagaInstanceId {}", stepName, sagaInstanceId);
                 return true;
             } else {
