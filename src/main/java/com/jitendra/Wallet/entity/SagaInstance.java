@@ -20,6 +20,9 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import jakarta.persistence.EntityListeners;
 import jakarta.persistence.Column;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+import org.hibernate.annotations.ColumnTransformer;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
@@ -29,8 +32,8 @@ import java.util.List;
 
 @Entity
 @Table(name = "saga_instance", indexes = {
-    @Index(name = "idx_saga_status_created", columnList = "status, created_date"),
-    @Index(name = "idx_saga_type_status", columnList = "saga_type, status")
+        @Index(name = "idx_saga_status_created", columnList = "status, created_date"),
+        @Index(name = "idx_saga_type_status", columnList = "saga_type, status")
 })
 @EntityListeners(AuditingEntityListener.class)
 @Data
@@ -43,22 +46,27 @@ public class SagaInstance {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // Identifies which saga workflow this instance belongs to (e.g., "USER_REGISTRATION", "PAYMENT_TRANSFER")
+    // Identifies which saga workflow this instance belongs to (e.g.,
+    // "USER_REGISTRATION", "PAYMENT_TRANSFER")
     @Column(name = "saga_type", nullable = false, length = 100)
     private String sagaType;
 
     // Current status of the saga orchestration
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
+    @Builder.Default
     private SagaStatus status = SagaStatus.STARTED;
 
     // JSON context data containing saga input parameters and intermediate results
-    @Column(name="context", nullable = false, columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "context", nullable = false, columnDefinition = "jsonb")
+    @ColumnTransformer(write = "?::jsonb")
     private String context;
 
     // Name of the current step being executed
     @Column(name = "current_step")
-    private String currentStep;
+    @Builder.Default
+    private String currentStep = "INITIALIZING";
 
     // Track when saga completed or failed - important for audit and metrics
     @Column(name = "completed_date")
@@ -74,14 +82,17 @@ public class SagaInstance {
 
     // Track how many times saga has been retried (for failure analysis)
     @Column(name = "retry_count", nullable = false)
+    @Builder.Default
     private Integer retryCount = 0;
 
     // Configurable retry limit per saga instance (prevent infinite loops)
     @Column(name = "max_retries", nullable = false)
+    @Builder.Default
     private Integer maxRetries = 3;
 
     // Timeout threshold to handle stuck/zombie sagas (in minutes)
     @Column(name = "timeout_minutes", nullable = false)
+    @Builder.Default
     private Integer timeoutMinutes = 60;
 
     // Expiry time calculated based on timeout - used by cleanup jobs

@@ -15,6 +15,9 @@ import jakarta.persistence.Index;
 import jakarta.persistence.UniqueConstraint;
 import jakarta.persistence.Column;
 import jakarta.persistence.EntityListeners;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+import org.hibernate.annotations.ColumnTransformer;
 import java.time.Instant;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
@@ -25,37 +28,35 @@ import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 
 @Entity
-@Table(name = "saga_step", 
-    indexes = {
+@Table(name = "saga_step", indexes = {
         @Index(name = "idx_step_saga_order", columnList = "saga_instance_id, step_order"),
         @Index(name = "idx_step_saga_status", columnList = "saga_instance_id, status")
-    },
-    uniqueConstraints = {
-        @UniqueConstraint(name = "uk_saga_step_order", columnNames = {"saga_instance_id", "step_order"})
-    }
-)
+}, uniqueConstraints = {
+        @UniqueConstraint(name = "uk_saga_step_order", columnNames = { "saga_instance_id", "step_order" })
+})
 @EntityListeners(AuditingEntityListener.class)
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
 public class SagaStep {
-    
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     // Many-to-one relationship with SagaInstance (proper foreign key)
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "saga_instance_id", nullable = false, foreignKey = @jakarta.persistence.ForeignKey(name = "fk_saga_step_instance"))
+    @JoinColumn(name = "saga_instance_id", nullable = false, updatable = false, foreignKey = @jakarta.persistence.ForeignKey(name = "fk_saga_step_instance"))
     private SagaInstance sagaInstance;
 
     // Order of execution - critical for orchestration and determining next step
-    @Column(name = "step_order", nullable = false)
+    @Column(name = "step_order", nullable = false, updatable = false)
     private Integer stepOrder;
 
-    // Name of the step (e.g., "CREATE_USER", "ALLOCATE_WALLET", "SEND_NOTIFICATION")
-    @Column(name = "step_name", nullable = false, length = 100)
+    // Name of the step (e.g., "CREATE_USER", "ALLOCATE_WALLET",
+    // "SEND_NOTIFICATION")
+    @Column(name = "step_name", nullable = false, length = 100, updatable = false)
     private String stepName;
 
     // Current status of this specific step
@@ -73,14 +74,18 @@ public class SagaStep {
 
     // Track step-level retries (some steps may need more retries than others)
     @Column(name = "retry_count", nullable = false)
+    @Builder.Default
     private Integer retryCount = 0;
 
     // Step-level retry configuration (allows per-step retry customization)
     @Column(name = "max_retries", nullable = false)
+    @Builder.Default
     private Integer maxRetries = 3;
 
     // JSON data containing step input parameters and output results
-    @Column(name="step_data", columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "step_data", columnDefinition = "jsonb")
+    @ColumnTransformer(write = "?::jsonb")
     private String stepData;
 
     // When step was created/initialized - distinguishes from actually started
