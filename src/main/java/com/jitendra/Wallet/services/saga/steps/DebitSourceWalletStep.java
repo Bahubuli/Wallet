@@ -4,7 +4,9 @@ import java.math.BigDecimal;
 
 import org.springframework.stereotype.Service;
 
+import com.jitendra.Wallet.entity.SagaIdempotencyKey;
 import com.jitendra.Wallet.entity.Wallet;
+import com.jitendra.Wallet.repository.SagaIdempotencyKeyRepository;
 import com.jitendra.Wallet.repository.WalletRepository;
 import com.jitendra.Wallet.services.saga.SagaContext;
 import com.jitendra.Wallet.services.saga.SagaStepInterface;
@@ -21,11 +23,20 @@ import lombok.extern.slf4j.Slf4j;
 public class DebitSourceWalletStep implements SagaStepInterface {
 
     private final WalletRepository walletRepository;
+    private final SagaIdempotencyKeyRepository idempotencyKeyRepository;
 
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean execute(SagaContext context) throws Exception {
         log.info("Executing DebitSourceWalletStep for sagaInstanceId: {}", context.getSagaInstanceId());
+
+        // Idempotency check — skip if this step was already executed for this saga
+        String idempotencyKey = context.getSagaInstanceId() + ":" + getStepName();
+        if (idempotencyKeyRepository.existsByIdempotencyKey(idempotencyKey)) {
+            log.info("Step {} already executed for sagaInstanceId: {} (idempotent skip)",
+                    getStepName(), context.getSagaInstanceId());
+            return true;
+        }
 
         BigDecimal amount = new BigDecimal(context.getData().get("amount").toString());
         Long sourceWalletId = Long.valueOf(context.getData().get("sourceWalletId").toString());
@@ -45,6 +56,14 @@ public class DebitSourceWalletStep implements SagaStepInterface {
         walletRepository.save(wallet);
 
         context.put("fromWalletBalanceAfterDebit", wallet.getBalance());
+
+        // Record idempotency key to prevent duplicate execution
+        idempotencyKeyRepository.save(SagaIdempotencyKey.builder()
+                .idempotencyKey(idempotencyKey)
+                .sagaInstanceId(context.getSagaInstanceId())
+                .stepName(getStepName())
+                .build());
+
         log.info("Debited amount: {} from source wallet id: {}. New balance: {}", amount, sourceWalletId,
                 wallet.getBalance());
         return true;
