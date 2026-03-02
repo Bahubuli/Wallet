@@ -48,7 +48,7 @@ public class Transaction {
     @Column(name = "type", nullable = false)
     private TransactionType type;
     
-    @Column(name = "saga_instance_id", nullable = false)
+    @Column(name = "saga_instance_id")
     private Long sagaInstanceId;
 
     @Column(name = "created_date", nullable = false, updatable = false)

@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.jitendra.Wallet.dto.TransactionRequestDTO;
 import com.jitendra.Wallet.dto.TransactionResponseDTO;
@@ -46,24 +47,33 @@ public class TransferSagaService {
                 transactionRequest.getDestinationWalletId(),
                 transactionRequest.getAmount());
 
-        // Create Transaction with PENDING status using builder pattern
+        // Atomically create both Transaction and Saga in one transaction
+        Object[] created = createTransactionAndStartSaga(transactionRequest);
+        Transaction savedTransaction = (Transaction) created[0];
+        Long sagaInstanceId = (Long) created[1];
+        SagaContext sagaContext = (SagaContext) created[2];
+
+        log.info("Saga started with id: {}, linked to transaction id: {}", sagaInstanceId, savedTransaction.getId());
+
+        // Execute the saga steps and get final status
+        boolean success = executeTransferSaga(sagaInstanceId, sagaContext);
+
+        // Update transaction status based on saga result
+        savedTransaction = updateTransactionStatus(savedTransaction.getId(), success);
+
+        return mapToResponseDTO(savedTransaction);
+    }
+
+    /**
+     * Atomically creates both the Transaction and the SagaInstance in a single
+     * database transaction. This prevents orphaned transactions (transactions
+     * with no associated saga) if the app crashes between the two operations.
+     */
+    @Transactional
+    protected Object[] createTransactionAndStartSaga(TransactionRequestDTO transactionRequest) {
         Instant now = Instant.now();
-        Transaction transaction = Transaction.builder()
-                .description(transactionRequest.getDescription())
-                .sourceWalletId(transactionRequest.getSourceWalletId())
-                .destinationWalletId(transactionRequest.getDestinationWalletId())
-                .amount(transactionRequest.getAmount())
-                .type(transactionRequest.getType())
-                .status(TransactionStatus.PENDING)
-                .sagaInstanceId(-1L) // <--- Temporary dummy ID to pass NOT NULL constraint
-                .createdDate(now)
-                .updatedDate(now)
-                .build();
 
-        Transaction savedTransaction = transactionRepository.save(transaction);
-        log.info("Transaction created with id: {} in PENDING status", savedTransaction.getId());
-
-        // Build saga context with transfer data using builder pattern
+        // Build saga context first
         Map<String, Object> contextData = new HashMap<>();
         contextData.put("sourceWalletId", transactionRequest.getSourceWalletId());
         contextData.put("destinationWalletId", transactionRequest.getDestinationWalletId());
@@ -71,7 +81,6 @@ public class TransferSagaService {
         contextData.put("description",
                 transactionRequest.getDescription() != null ? transactionRequest.getDescription() : "");
         contextData.put("transactionType", transactionRequest.getType());
-        contextData.put("transactionId", savedTransaction.getId());
         contextData.put("newStatus", TransactionStatus.SUCCESS.name());
 
         SagaContext sagaContext = SagaContext.builder()
@@ -83,19 +92,26 @@ public class TransferSagaService {
         Long sagaInstanceId = sagaOrchestrator.startSaga(sagaContext);
         sagaContext.setSagaInstanceId(sagaInstanceId);
 
-        // Link transaction to saga
-        savedTransaction.setSagaInstanceId(sagaInstanceId);
-        savedTransaction = transactionRepository.save(savedTransaction);
+        // Create Transaction linked to the saga from the start (no dummy ID)
+        Transaction transaction = Transaction.builder()
+                .description(transactionRequest.getDescription())
+                .sourceWalletId(transactionRequest.getSourceWalletId())
+                .destinationWalletId(transactionRequest.getDestinationWalletId())
+                .amount(transactionRequest.getAmount())
+                .type(transactionRequest.getType())
+                .status(TransactionStatus.PENDING)
+                .sagaInstanceId(sagaInstanceId)
+                .createdDate(now)
+                .updatedDate(now)
+                .build();
 
-        log.info("Saga started with id: {}, linked to transaction id: {}", sagaInstanceId, savedTransaction.getId());
+        Transaction savedTransaction = transactionRepository.save(transaction);
+        sagaContext.getData().put("transactionId", savedTransaction.getId());
 
-        // Execute the saga steps and get final status
-        boolean success = executeTransferSaga(sagaInstanceId, sagaContext);
+        log.info("Transaction created with id: {} linked to saga id: {}",
+                savedTransaction.getId(), sagaInstanceId);
 
-        // Update transaction status based on saga result
-        savedTransaction = updateTransactionStatus(savedTransaction.getId(), success);
-
-        return mapToResponseDTO(savedTransaction);
+        return new Object[] { savedTransaction, sagaInstanceId, sagaContext };
     }
 
     /**
