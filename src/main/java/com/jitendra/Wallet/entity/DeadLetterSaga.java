@@ -12,8 +12,11 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.NoArgsConstructor;
+
+import java.util.Objects;
 
 /**
  * Captures permanently failed sagas for manual review and intervention.
@@ -21,7 +24,8 @@ import lombok.NoArgsConstructor;
  */
 @Entity
 @Table(name = "dead_letter_saga")
-@Data
+@Getter
+@Setter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
@@ -54,5 +58,18 @@ public class DeadLetterSaga {
     @PrePersist
     protected void onCreate() {
         createdDate = LocalDateTime.now();
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        DeadLetterSaga that = (DeadLetterSaga) o;
+        return id != null && Objects.equals(id, that.id);
+    }
+
+    @Override
+    public int hashCode() {
+        return getClass().hashCode();
     }
 }

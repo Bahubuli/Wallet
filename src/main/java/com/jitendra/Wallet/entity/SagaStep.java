@@ -23,9 +23,12 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import lombok.Builder;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
+
+import java.util.Objects;
 
 @Entity
 @Table(name = "saga_step", indexes = {
@@ -35,7 +38,8 @@ import lombok.AllArgsConstructor;
         @UniqueConstraint(name = "uk_saga_step_order", columnNames = { "saga_instance_id", "step_order" })
 })
 @EntityListeners(AuditingEntityListener.class)
-@Data
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
@@ -106,4 +110,16 @@ public class SagaStep {
     @Column(name = "version")
     private Long version;
 
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        SagaStep sagaStep = (SagaStep) o;
+        return id != null && Objects.equals(id, sagaStep.id);
+    }
+
+    @Override
+    public int hashCode() {
+        return getClass().hashCode();
+    }
 }

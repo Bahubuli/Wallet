@@ -23,12 +23,14 @@ import jakarta.persistence.Column;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 import org.hibernate.annotations.ColumnTransformer;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 
 import java.util.List;
+import java.util.Objects;
 
 @Entity
 @Table(name = "saga_instance", indexes = {
@@ -36,7 +38,8 @@ import java.util.List;
         @Index(name = "idx_saga_type_status", columnList = "saga_type, status")
 })
 @EntityListeners(AuditingEntityListener.class)
-@Data
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
@@ -117,5 +120,19 @@ public class SagaInstance {
     // Bidirectional relationship - saga instance contains multiple steps
     @OneToMany(mappedBy = "sagaInstance", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<SagaStep> steps;
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        SagaInstance that = (SagaInstance) o;
+        return id != null && Objects.equals(id, that.id);
+    }
+
+    @Override
+    public int hashCode() {
+        return getClass().hashCode();
+    }
+}
 
 }
