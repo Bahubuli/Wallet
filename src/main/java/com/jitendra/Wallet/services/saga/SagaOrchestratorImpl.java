@@ -1,6 +1,5 @@
 package com.jitendra.Wallet.services.saga;
 
-import java.util.Collections;
 import java.util.List;
 
 import org.springframework.dao.CannotAcquireLockException;
@@ -259,8 +258,8 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
 
     @Override
     public SagaInstance getSagaInstance(Long sagaInstanceId) {
-        // Get saga instance implementation
-        return null;
+        return sagaInstanceRepository.findById(sagaInstanceId)
+                .orElseThrow(() -> new RuntimeException("SagaInstance not found with id: " + sagaInstanceId));
     }
 
     /**
@@ -280,9 +279,9 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
             SagaInstance sagaInstance = sagaInstanceRepository.findById(sagaInstanceId)
                     .orElseThrow(() -> new RuntimeException("SagaInstance not found with id: " + sagaInstanceId));
 
-            // Find all completed steps for this saga instance
-            List<SagaStep> completedSteps = sagaStepRepository.findBySagaInstanceIdAndStatus(sagaInstanceId,
-                    StepStatus.COMPLETED);
+            // Find all completed steps in reverse order (highest stepOrder first) for compensation
+            List<SagaStep> completedSteps = sagaStepRepository
+                    .findBySagaInstanceIdAndStatusOrderByStepOrderDesc(sagaInstanceId, StepStatus.COMPLETED);
 
             if (completedSteps.isEmpty()) {
                 log.info("No completed steps found for saga compensation, sagaInstanceId: {}", sagaInstanceId);
@@ -295,9 +294,6 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
 
             // Update saga status to compensating
             updateSagaStatus(sagaInstanceId, SagaStatus.COMPENSATING);
-
-            // Compensate steps in reverse order (LIFO)
-            Collections.reverse(completedSteps);
 
             boolean allStepsCompensated = true;
 
