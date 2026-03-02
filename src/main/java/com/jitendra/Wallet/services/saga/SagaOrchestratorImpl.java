@@ -3,6 +3,10 @@ package com.jitendra.Wallet.services.saga;
 import java.util.Collections;
 import java.util.List;
 
+import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.dao.TransientDataAccessException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.retry.support.RetryTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -74,6 +78,16 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
         // Ensure the SagaStep entity exists in the DB (create if new)
         SagaStep sagaStep = initializeStepRecord(sagaInstanceId, sagaInstance, stepName, stepOrder);
 
+        // Build a RetryTemplate that retries only transient failures
+        int maxRetries = step.getMaxRetries() != null ? step.getMaxRetries() : 3;
+        RetryTemplate retryTemplate = RetryTemplate.builder()
+                .maxAttempts(maxRetries)
+                .exponentialBackoff(500, 2.0, 5000)
+                .retryOn(ObjectOptimisticLockingFailureException.class)
+                .retryOn(CannotAcquireLockException.class)
+                .retryOn(TransientDataAccessException.class)
+                .build();
+
         try {
             // Deserialize context from the saga instance
             SagaContext context = objectMapper.readValue(sagaInstance.getContext(), SagaContext.class);
@@ -81,8 +95,15 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
             // Mark step as RUNNING in its own transaction
             updateStepStatus(sagaStep.getId(), StepStatus.RUNNING, null);
 
-            // Execute the business logic (runs in REQUIRES_NEW inside the step itself)
-            boolean result = step.execute(context);
+            // Execute the business logic with retry support
+            boolean result = retryTemplate.execute(retryContext -> {
+                if (retryContext.getRetryCount() > 0) {
+                    log.warn("Retrying saga step {} for sagaInstanceId {}, attempt {}/{}",
+                            stepName, sagaInstanceId, retryContext.getRetryCount() + 1, maxRetries);
+                    incrementStepRetryCount(sagaStep.getId());
+                }
+                return step.execute(context);
+            });
 
             if (result) {
                 // Mark step COMPLETED and persist updated context atomically in one transaction
@@ -97,11 +118,22 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
 
         } catch (Exception e) {
             updateStepStatus(sagaStep.getId(), StepStatus.FAILED, e.getMessage());
-            log.error("Saga step {} failed for sagaInstanceId {} with error: {}",
-                    stepName, sagaInstanceId, e.getMessage());
+            log.error("Saga step {} failed for sagaInstanceId {} after {} retries with error: {}",
+                    stepName, sagaInstanceId, maxRetries, e.getMessage());
             return false;
         }
 
+    }
+
+    /**
+     * Increment the retry count on a saga step in its own transaction.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void incrementStepRetryCount(Long sagaStepId) {
+        SagaStep sagaStep = sagaStepRepository.findById(sagaStepId)
+                .orElseThrow(() -> new RuntimeException("SagaStep not found with id: " + sagaStepId));
+        sagaStep.setRetryCount(sagaStep.getRetryCount() + 1);
+        sagaStepRepository.save(sagaStep);
     }
 
     /**
