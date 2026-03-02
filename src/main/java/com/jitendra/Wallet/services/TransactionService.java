@@ -41,6 +41,11 @@ public class TransactionService {
                                 transactionRequest.getDestinationWalletId(),
                                 transactionRequest.getAmount());
 
+                // Prevent self-transfer
+                if (transactionRequest.getSourceWalletId().equals(transactionRequest.getDestinationWalletId())) {
+                        throw new IllegalArgumentException("Source and destination wallets must be different");
+                }
+
                 // Validate wallets exist
                 Wallet sourceWallet = walletRepository.findById(transactionRequest.getSourceWalletId())
                                 .orElseThrow(() -> new RuntimeException(

@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import lombok.RequiredArgsConstructor;
+import jakarta.validation.Valid;
 import com.jitendra.Wallet.dto.TransactionRequestDTO;
 import com.jitendra.Wallet.dto.TransactionResponseDTO;
 import com.jitendra.Wallet.entity.TransactionStatus;
@@ -34,7 +35,7 @@ public class TransactionController {
      * @return Created transaction with saga instance ID
      */
     @PostMapping("/create")
-    public ResponseEntity<TransactionResponseDTO> createTransaction(@RequestBody TransactionRequestDTO transactionRequest) {
+    public ResponseEntity<TransactionResponseDTO> createTransaction(@Valid @RequestBody TransactionRequestDTO transactionRequest) {
         TransactionResponseDTO response = transactionService.createTransaction(transactionRequest);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
