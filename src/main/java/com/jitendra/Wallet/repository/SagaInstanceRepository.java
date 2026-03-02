@@ -11,8 +11,6 @@ import org.springframework.stereotype.Repository;
 
 import com.jitendra.Wallet.entity.SagaInstance;
 import com.jitendra.Wallet.entity.SagaStatus;
-import com.jitendra.Wallet.entity.SagaStep;
-import com.jitendra.Wallet.entity.StepStatus;
 
 @Repository
 public interface SagaInstanceRepository extends JpaRepository<SagaInstance, Long> {

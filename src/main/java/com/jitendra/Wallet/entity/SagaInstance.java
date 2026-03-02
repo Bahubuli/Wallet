@@ -134,5 +134,3 @@ public class SagaInstance {
         return getClass().hashCode();
     }
 }
-
-}

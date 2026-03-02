@@ -279,7 +279,8 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
     @Override
     public void compensateSaga(Long sagaInstanceId) {
         try {
-            SagaInstance sagaInstance = sagaInstanceRepository.findById(sagaInstanceId)
+            // Validate saga exists
+            sagaInstanceRepository.findById(sagaInstanceId)
                     .orElseThrow(() -> new RuntimeException("SagaInstance not found with id: " + sagaInstanceId));
 
             // Find all completed steps in reverse order (highest stepOrder first) for compensation
