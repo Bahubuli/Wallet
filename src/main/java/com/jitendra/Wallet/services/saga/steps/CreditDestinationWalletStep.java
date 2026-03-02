@@ -45,10 +45,8 @@ public class CreditDestinationWalletStep implements SagaStepInterface {
         // step 1 : get the destination wallet id and amount from context
         Long destinationWalletId = Long.valueOf(context.getData().get("destinationWalletId").toString());
 
-        // step 2 : fetch the destination wallet from the database with a lock
-        // Optional <Wallet> destinationWalletOpt =
-        // walletRepository.findByIdWithLock(destinationWalletId);
-        Wallet wallet = walletRepository.findByIdWithLock(destinationWalletId)
+        // step 2 : fetch the destination wallet from the database (optimistic lock via @Version)
+        Wallet wallet = walletRepository.findById(destinationWalletId)
                 .orElseThrow(() -> new RuntimeException("Destination Wallet not Found"));
 
         context.put("toWalletBalanceBeforeCredit", wallet.getBalance());
@@ -83,10 +81,8 @@ public class CreditDestinationWalletStep implements SagaStepInterface {
         // step 1 : get the destination wallet id and amount from context
         Long destinationWalletId = Long.valueOf(context.getData().get("destinationWalletId").toString());
 
-        // step 2 : fetch the destination wallet from the database with a lock
-        // Optional <Wallet> destinationWalletOpt =
-        // walletRepository.findByIdWithLock(destinationWalletId);
-        Wallet wallet = walletRepository.findByIdWithLock(destinationWalletId)
+        // step 2 : fetch the destination wallet from the database (optimistic lock via @Version)
+        Wallet wallet = walletRepository.findById(destinationWalletId)
                 .orElseThrow(() -> new RuntimeException("Destination Wallet not Found"));
 
         context.put("toWalletBalanceBeforeCredit", wallet.getBalance());

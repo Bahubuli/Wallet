@@ -136,7 +136,7 @@ public class WalletService {
             throw new IllegalArgumentException("Amount must be positive");
         }
 
-        Wallet wallet = walletRepository.findByIdWithLock(id)
+        Wallet wallet = walletRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Wallet not found with id: " + id));
 
         if (!wallet.getIsActive()) {
@@ -166,7 +166,7 @@ public class WalletService {
             throw new IllegalArgumentException("Amount must be positive");
         }
 
-        Wallet wallet = walletRepository.findByIdWithLock(id)
+        Wallet wallet = walletRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Wallet not found with id: " + id));
 
         if (!wallet.getIsActive()) {
@@ -196,7 +196,7 @@ public class WalletService {
             throw new IllegalArgumentException("Amount must be positive");
         }
 
-        Wallet wallet = walletRepository.findByIdWithLock(id)
+        Wallet wallet = walletRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Wallet not found with id: " + id));
 
         if (!wallet.getIsActive()) {
