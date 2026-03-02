@@ -32,6 +32,10 @@ public interface SagaInstanceRepository extends JpaRepository<SagaInstance, Long
     // Find saga instances that failed and need recovery
     @Query("SELECT s FROM SagaInstance s WHERE s.status = 'FAILED' AND s.retryCount < s.maxRetries")
     List<SagaInstance> findFailedSagasEligibleForRetry();
+
+    // Find stalled sagas (stuck in STARTED or COMPENSATING for too long)
+    @Query("SELECT s FROM SagaInstance s WHERE s.status IN ('STARTED', 'COMPENSATING') AND s.updatedDate < :cutoff")
+    List<SagaInstance> findStalledSagas(@Param("cutoff") Instant cutoff);
     
     // Find saga instances by current step name
     List<SagaInstance> findByCurrentStep(String currentStep);
