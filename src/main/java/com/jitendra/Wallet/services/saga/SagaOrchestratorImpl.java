@@ -11,12 +11,14 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jitendra.Wallet.entity.DeadLetterSaga;
 import com.jitendra.Wallet.entity.SagaInstance;
 import com.jitendra.Wallet.entity.SagaStatus;
 import com.jitendra.Wallet.entity.SagaStep;
 import com.jitendra.Wallet.entity.StepStatus;
 import com.jitendra.Wallet.repository.SagaInstanceRepository;
 import com.jitendra.Wallet.repository.SagaStepRepository;
+import com.jitendra.Wallet.repository.DeadLetterSagaRepository;
 import com.jitendra.Wallet.services.saga.steps.SagaStepFactory;
 
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +33,7 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
     private final SagaInstanceRepository sagaInstanceRepository;
     private final SagaStepFactory sagaStepFactory;
     private final SagaStepRepository sagaStepRepository;
+    private final DeadLetterSagaRepository deadLetterSagaRepository;
 
     @Override
     @Transactional
@@ -334,10 +337,35 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
     public void failSaga(Long sagaInstanceId) {
         try {
             updateSagaStatus(sagaInstanceId, SagaStatus.FAILED);
-            log.error("Saga marked as failed for sagaInstanceId: {}", sagaInstanceId);
+            sendToDeadLetterQueue(sagaInstanceId);
+            log.error("Saga marked as failed and sent to DLQ for sagaInstanceId: {}", sagaInstanceId);
         } catch (Exception e) {
             log.error("Failed to mark saga as failed for id: {}, error: {}", sagaInstanceId, e.getMessage());
             throw new RuntimeException("Failed to mark saga as failed", e);
+        }
+    }
+
+    /**
+     * Send a permanently failed saga to the dead-letter queue for manual review.
+     */
+    private void sendToDeadLetterQueue(Long sagaInstanceId) {
+        try {
+            SagaInstance saga = sagaInstanceRepository.findById(sagaInstanceId)
+                    .orElseThrow(() -> new RuntimeException("SagaInstance not found: " + sagaInstanceId));
+
+            DeadLetterSaga dlq = DeadLetterSaga.builder()
+                    .sagaInstanceId(sagaInstanceId)
+                    .sagaType(saga.getSagaType())
+                    .lastStatus(saga.getStatus().name())
+                    .contextSnapshot(saga.getContext())
+                    .errorDetails(saga.getErrorDetails())
+                    .build();
+
+            deadLetterSagaRepository.save(dlq);
+            log.info("Saga id: {} sent to dead-letter queue", sagaInstanceId);
+        } catch (Exception e) {
+            // DLQ write failure should not prevent the saga from being marked as failed
+            log.error("Failed to send saga id: {} to dead-letter queue: {}", sagaInstanceId, e.getMessage());
         }
     }
 
