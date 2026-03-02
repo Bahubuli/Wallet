@@ -10,7 +10,6 @@ import com.jitendra.Wallet.services.saga.SagaContext;
 import com.jitendra.Wallet.services.saga.SagaStepInterface;
 import com.jitendra.Wallet.services.saga.steps.SagaStepFactory.SagaStepType;
 
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,7 +22,7 @@ public class CreditDestinationWalletStep implements SagaStepInterface {
     private final WalletRepository walletRepository;
 
     @Override
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional
     public boolean execute(SagaContext context) throws Exception {
         // Implementation for crediting the destination wallet
         log.info("Executing CreditDestinationWalletStep for sagaInstanceId: {}", context.getSagaInstanceId());
@@ -54,7 +53,7 @@ public class CreditDestinationWalletStep implements SagaStepInterface {
     }
 
     @Override
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional
     public boolean compensate(SagaContext context) throws Exception {
         log.info("Compensating CreditDestinationWalletStep for sagaInstanceId: {}", context.getSagaInstanceId());
 

@@ -10,7 +10,6 @@ import com.jitendra.Wallet.services.saga.SagaContext;
 import com.jitendra.Wallet.services.saga.SagaStepInterface;
 import com.jitendra.Wallet.services.saga.steps.SagaStepFactory.SagaStepType;
 
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,7 +22,7 @@ public class DebitSourceWalletStep implements SagaStepInterface {
     private final WalletRepository walletRepository;
 
     @Override
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional
     public boolean execute(SagaContext context) throws Exception {
         log.info("Executing DebitSourceWalletStep for sagaInstanceId: {}", context.getSagaInstanceId());
 
@@ -51,7 +50,7 @@ public class DebitSourceWalletStep implements SagaStepInterface {
     }
 
     @Override
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional
     public boolean compensate(SagaContext context) throws Exception {
         log.info("Compensating DebitSourceWalletStep for sagaInstanceId: {}", context.getSagaInstanceId());
 
