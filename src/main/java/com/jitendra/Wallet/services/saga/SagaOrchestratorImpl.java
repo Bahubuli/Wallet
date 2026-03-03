@@ -1,8 +1,18 @@
 package com.jitendra.Wallet.services.saga;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
+import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.dao.TransientDataAccessException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.retry.RecoveryCallback;
+import org.springframework.retry.RetryCallback;
+import org.springframework.retry.backoff.ExponentialBackOffPolicy;
+import org.springframework.retry.policy.SimpleRetryPolicy;
+import org.springframework.retry.support.RetryTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +39,40 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
     private final SagaStepFactory sagaStepFactory;
     private final SagaStepRepository sagaStepRepository;
 
+    /**
+     * Exception types considered transient (temporary) — safe to retry.
+     * Permanent exceptions (e.g. EntityNotFoundException) are NOT listed here
+     * and will bypass the retry loop immediately.
+     */
+    private static final Map<Class<? extends Throwable>, Boolean> TRANSIENT_EXCEPTIONS;
+    static {
+        TRANSIENT_EXCEPTIONS = new HashMap<>();
+        TRANSIENT_EXCEPTIONS.put(ObjectOptimisticLockingFailureException.class, true);
+        TRANSIENT_EXCEPTIONS.put(CannotAcquireLockException.class, true);
+        TRANSIENT_EXCEPTIONS.put(TransientDataAccessException.class, true);
+    }
+
+    /**
+     * Builds a RetryTemplate that retries only on transient exceptions with
+     * exponential back-off: 1 s → 2 s → 4 s … capped at 10 s.
+     *
+     * @param maxAttempts total attempts (first try + retries), taken from sagaStep.maxRetries
+     */
+    private RetryTemplate buildRetryTemplate(int maxAttempts) {
+        // traverseCauses=true → also matches subclasses of the listed exceptions
+        SimpleRetryPolicy retryPolicy = new SimpleRetryPolicy(maxAttempts, TRANSIENT_EXCEPTIONS, true);
+
+        ExponentialBackOffPolicy backOffPolicy = new ExponentialBackOffPolicy();
+        backOffPolicy.setInitialInterval(1_000L);  // 1 second
+        backOffPolicy.setMultiplier(2.0);           // doubles each time: 1s, 2s, 4s …
+        backOffPolicy.setMaxInterval(10_000L);      // cap at 10 seconds
+
+        RetryTemplate retryTemplate = new RetryTemplate();
+        retryTemplate.setRetryPolicy(retryPolicy);
+        retryTemplate.setBackOffPolicy(backOffPolicy);
+        return retryTemplate;
+    }
+
     @Override
     @Transactional
     public Long startSaga(SagaContext context) {
@@ -53,39 +97,23 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
     }
 
     @Override
-    @Transactional
+    @Transactional(noRollbackFor = {
+            TransientDataAccessException.class,
+            ObjectOptimisticLockingFailureException.class,
+            CannotAcquireLockException.class
+    })
     public boolean executeStep(Long sagaInstanceId, String stepName, Integer stepOrder) {
 
         SagaInstance sagaInstance = sagaInstanceRepository.findById(sagaInstanceId)
                 .orElseThrow(() -> new RuntimeException("SagaInstance not found with id: " + sagaInstanceId));
-
-        // now we have sagaInstance object we also need saga step object in order to
-        // execute the step
-        // for that we need to create the object for saga step
-        // now similar to saga instance we don't want one exact step class for all the
-        // saga types
-        // rather we want to have different step classes for different saga types
-        // so for that we can create a factory class which will return the step object
-        // based
-        // on the saga type and step name
-        // once we have the step object we can call the execute method on it to execute
-        // the step
-        // this is saga step object for methods
-
-        // With @Autowired, you'd need to know at compile time which specific step class
-        // you want,
-        // but here the step name comes dynamically from the database or workflow
-        // configuration.
 
         SagaStepInterface step = sagaStepFactory.getSagaStepByName(stepName);
         if (step == null) {
             log.error("Saga step not found for step name: {}", stepName);
             throw new RuntimeException("Saga step not found for step name: " + stepName);
         }
-        // fetch the saga step from database, by sagaInstanceId and stepName
-        // if saga step is not found then create a new saga step with status PENDING
 
-        // this is saga step entity from database, hai to theek verna build kr do
+        // Fetch existing PENDING step from DB, or build a new one
         SagaStep sagaStep = sagaStepRepository
                 .findBySagaInstanceIdAndStatusAndStepName(sagaInstanceId, StepStatus.PENDING, stepName)
                 .orElse(
@@ -102,39 +130,80 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
         try {
             SagaContext context = objectMapper.readValue(sagaInstance.getContext(), SagaContext.class);
             sagaStep.setStatus(StepStatus.RUNNING);
-            sagaStepRepository.save(sagaStep);
+            
+            //The final keyword here is required by Java because runningSagaStep is referenced inside the
+            //  lambda below. Any variable used inside a lambda must be effectively final.
+            final SagaStep runningSagaStep = sagaStepRepository.save(sagaStep);
 
-            boolean result = step.execute(context);
+            // Build a RetryTemplate driven by the step's own maxRetries setting.
+            // Only transient exceptions (lock contention, optimistic locking, etc.)
+            // are retried; permanent errors propagate immediately.
+            RetryTemplate retryTemplate = buildRetryTemplate(runningSagaStep.getMaxRetries());
+
+            boolean result = retryTemplate.execute(
+                    (RetryCallback<Boolean, Exception>) retryContext -> {
+                        // retryContext.getRetryCount() == 0 on the very first attempt
+                        if (retryContext.getRetryCount() > 0) {
+                            runningSagaStep.setRetryCount(runningSagaStep.getRetryCount() + 1);
+                            sagaStepRepository.save(runningSagaStep);
+                            log.warn("Retrying saga step '{}' for sagaInstanceId {}, attempt {}/{}, "
+                                    + "previous error: {}",
+                                    stepName, sagaInstanceId,
+                                    retryContext.getRetryCount() + 1,
+                                    runningSagaStep.getMaxRetries(),
+                                    retryContext.getLastThrowable() != null
+                                            ? retryContext.getLastThrowable().getMessage() : "unknown");
+                        }
+                        return step.execute(context);
+                    },
+                    (RecoveryCallback<Boolean>) recoveryContext -> {
+                        // Reached only when every attempt threw a transient exception
+                        Throwable lastError = recoveryContext.getLastThrowable();
+                        log.error("All {} attempts exhausted for saga step '{}' in sagaInstanceId {}. "
+                                + "Final error: {}",
+                                runningSagaStep.getMaxRetries(), stepName, sagaInstanceId,
+                                lastError != null ? lastError.getMessage() : "unknown");
+                        if (lastError != null) {
+                            runningSagaStep.setErrorMessage(lastError.getMessage());
+                        }
+                        return false;
+                    }
+            );
 
             if (result) {
-                sagaStep.setStatus(StepStatus.COMPLETED);
-                sagaStepRepository.save(sagaStep);
+                runningSagaStep.setStatus(StepStatus.COMPLETED);
+                sagaStepRepository.save(runningSagaStep);
 
                 // Serialize and persist any data added to context during step execution
                 sagaInstance.setContext(objectMapper.writeValueAsString(context));
                 sagaInstanceRepository.save(sagaInstance);
 
-                log.info("Saga step {} completed for sagaInstanceId {}", stepName, sagaInstanceId);
+                log.info("Saga step '{}' completed for sagaInstanceId {}", stepName, sagaInstanceId);
                 return true;
             } else {
-                sagaStep.setStatus(StepStatus.FAILED);
-                sagaStepRepository.save(sagaStep);
-                log.error("Saga step {} failed for sagaInstanceId {}", stepName, sagaInstanceId);
+                runningSagaStep.setStatus(StepStatus.FAILED);
+                sagaStepRepository.save(runningSagaStep);
+                log.error("Saga step '{}' failed for sagaInstanceId {}", stepName, sagaInstanceId);
                 return false;
             }
 
         } catch (Exception e) {
+            // Permanent (non-transient) failure — no retry, mark step as FAILED immediately
             sagaStep.setStatus(StepStatus.FAILED);
+            sagaStep.setErrorMessage(e.getMessage());
             sagaStepRepository.save(sagaStep);
-            log.error("Saga step {} failed for sagaInstanceId {} with error: {}", stepName, sagaInstanceId,
-                    e.getMessage());
+            log.error("Saga step '{}' failed permanently for sagaInstanceId {} with error: {}",
+                    stepName, sagaInstanceId, e.getMessage());
             return false;
         }
-
     }
 
     @Override
-    @Transactional
+    @Transactional(noRollbackFor = {
+            TransientDataAccessException.class,
+            ObjectOptimisticLockingFailureException.class,
+            CannotAcquireLockException.class
+    })
     public boolean compensateStep(Long sagaInstanceId, String stepName) {
 
         SagaInstance sagaInstance = sagaInstanceRepository.findById(sagaInstanceId)
@@ -146,7 +215,7 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
             throw new RuntimeException("Saga step not found for step name: " + stepName);
         }
 
-        // fetch the completed saga step from database to compensate it
+        // Fetch the completed step that needs to be rolled back
         SagaStep sagaStep = sagaStepRepository
                 .findBySagaInstanceIdAndStatusAndStepName(sagaInstanceId, StepStatus.COMPLETED, stepName)
                 .orElseThrow(() -> new RuntimeException("Completed saga step not found for step name: " + stepName));
@@ -154,31 +223,60 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
         try {
             SagaContext context = objectMapper.readValue(sagaInstance.getContext(), SagaContext.class);
             sagaStep.setStatus(StepStatus.RUNNING);
-            sagaStepRepository.save(sagaStep);
+            final SagaStep runningSagaStep = sagaStepRepository.save(sagaStep);
 
-            boolean result = step.compensate(context);
+            RetryTemplate retryTemplate = buildRetryTemplate(runningSagaStep.getMaxRetries());
+
+            boolean result = retryTemplate.execute(
+                    (RetryCallback<Boolean, Exception>) retryContext -> {
+                        if (retryContext.getRetryCount() > 0) {
+                            runningSagaStep.setRetryCount(runningSagaStep.getRetryCount() + 1);
+                            sagaStepRepository.save(runningSagaStep);
+                            log.warn("Retrying compensation of saga step '{}' for sagaInstanceId {}, "
+                                    + "attempt {}/{}, previous error: {}",
+                                    stepName, sagaInstanceId,
+                                    retryContext.getRetryCount() + 1,
+                                    runningSagaStep.getMaxRetries(),
+                                    retryContext.getLastThrowable() != null
+                                            ? retryContext.getLastThrowable().getMessage() : "unknown");
+                        }
+                        return step.compensate(context);
+                    },
+                    (RecoveryCallback<Boolean>) recoveryContext -> {
+                        Throwable lastError = recoveryContext.getLastThrowable();
+                        log.error("All {} compensation attempts exhausted for saga step '{}' in sagaInstanceId {}. "
+                                + "Final error: {}",
+                                runningSagaStep.getMaxRetries(), stepName, sagaInstanceId,
+                                lastError != null ? lastError.getMessage() : "unknown");
+                        if (lastError != null) {
+                            runningSagaStep.setErrorMessage(lastError.getMessage());
+                        }
+                        return false;
+                    }
+            );
 
             if (result) {
-                sagaStep.setStatus(StepStatus.COMPENSATED);
-                sagaStepRepository.save(sagaStep);
+                runningSagaStep.setStatus(StepStatus.COMPENSATED);
+                sagaStepRepository.save(runningSagaStep);
 
-                // Serialize and persist any data added to context during compensation execution
+                // Serialize and persist any data added to context during compensation
                 sagaInstance.setContext(objectMapper.writeValueAsString(context));
                 sagaInstanceRepository.save(sagaInstance);
 
-                log.info("Saga step {} compensated for sagaInstanceId {}", stepName, sagaInstanceId);
+                log.info("Saga step '{}' compensated for sagaInstanceId {}", stepName, sagaInstanceId);
                 return true;
             } else {
-                sagaStep.setStatus(StepStatus.FAILED);
-                sagaStepRepository.save(sagaStep);
-                log.error("Saga step {} compensation failed for sagaInstanceId {}", stepName, sagaInstanceId);
+                runningSagaStep.setStatus(StepStatus.FAILED);
+                sagaStepRepository.save(runningSagaStep);
+                log.error("Saga step '{}' compensation failed for sagaInstanceId {}", stepName, sagaInstanceId);
                 return false;
             }
         } catch (Exception e) {
             sagaStep.setStatus(StepStatus.FAILED);
+            sagaStep.setErrorMessage(e.getMessage());
             sagaStepRepository.save(sagaStep);
-            log.error("Saga step {} compensation failed for sagaInstanceId {} with error: {}", stepName, sagaInstanceId,
-                    e.getMessage());
+            log.error("Saga step '{}' compensation failed permanently for sagaInstanceId {} with error: {}",
+                    stepName, sagaInstanceId, e.getMessage());
             return false;
         }
     }
