@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import com.jitendra.Wallet.dto.UserRequestDTO;
 import com.jitendra.Wallet.dto.UserResponseDTO;
@@ -19,11 +20,11 @@ import com.jitendra.Wallet.services.UserService;
 @RequestMapping("/users")
 @RequiredArgsConstructor
 public class UserController {
-    
+
     private final UserService userService;
-    
+
     @PostMapping("/create")
-    public ResponseEntity<UserResponseDTO> createUser(@RequestBody UserRequestDTO userRequestDTO) {
+    public ResponseEntity<UserResponseDTO> createUser(@Valid @RequestBody UserRequestDTO userRequestDTO) {
         UserResponseDTO response = userService.createUser(userRequestDTO);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }

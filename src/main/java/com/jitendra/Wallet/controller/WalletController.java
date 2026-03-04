@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import jakarta.validation.Valid;
 import com.jitendra.Wallet.dto.WalletRequestDTO;
 import com.jitendra.Wallet.dto.WalletResponseDTO;
 import com.jitendra.Wallet.services.WalletService;
@@ -32,7 +33,7 @@ public class WalletController {
      * POST /wallets/create
      */
     @PostMapping("/create")
-    public ResponseEntity<WalletResponseDTO> createWallet(@RequestBody WalletRequestDTO walletRequest) {
+    public ResponseEntity<WalletResponseDTO> createWallet(@Valid @RequestBody WalletRequestDTO walletRequest) {
         WalletResponseDTO response = walletService.createWallet(walletRequest);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
