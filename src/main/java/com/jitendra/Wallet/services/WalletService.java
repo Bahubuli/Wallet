@@ -9,6 +9,8 @@ import org.springframework.transaction.annotation.Transactional;
 import com.jitendra.Wallet.dto.WalletRequestDTO;
 import com.jitendra.Wallet.dto.WalletResponseDTO;
 import com.jitendra.Wallet.entity.Wallet;
+import com.jitendra.Wallet.exception.BusinessException;
+import com.jitendra.Wallet.exception.ResourceNotFoundException;
 import com.jitendra.Wallet.repository.WalletRepository;
 
 import lombok.RequiredArgsConstructor;
@@ -52,7 +54,7 @@ public class WalletService {
     public WalletResponseDTO getWalletById(Long id) {
         log.info("Fetching wallet with id: {}", id);
         Wallet wallet = walletRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Wallet not found with id: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Wallet not found with id: " + id));
         return mapToResponseDTO(wallet);
     }
 
@@ -80,7 +82,7 @@ public class WalletService {
     public WalletResponseDTO activateWallet(Long id) {
         log.info("Activating wallet with id: {}", id);
         Wallet wallet = walletRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Wallet not found with id: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Wallet not found with id: " + id));
 
         wallet.setIsActive(true);
         Wallet savedWallet = walletRepository.save(wallet);
@@ -99,7 +101,7 @@ public class WalletService {
     public WalletResponseDTO deactivateWallet(Long id) {
         log.info("Deactivating wallet with id: {}", id);
         Wallet wallet = walletRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Wallet not found with id: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Wallet not found with id: " + id));
 
         wallet.setIsActive(false);
         Wallet savedWallet = walletRepository.save(wallet);
@@ -117,7 +119,7 @@ public class WalletService {
     public BigDecimal getBalance(Long id) {
         log.info("Fetching balance for wallet id: {}", id);
         Wallet wallet = walletRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Wallet not found with id: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Wallet not found with id: " + id));
         return wallet.getBalance();
     }
 
@@ -133,14 +135,14 @@ public class WalletService {
         log.info("Adding funds {} to wallet id: {}", amount, id);
 
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("Amount must be positive");
+            throw new BusinessException("Amount must be positive");
         }
 
         Wallet wallet = walletRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Wallet not found with id: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Wallet not found with id: " + id));
 
         if (!wallet.getIsActive()) {
-            throw new RuntimeException("Cannot add funds to inactive wallet");
+            throw new BusinessException("Cannot add funds to inactive wallet");
         }
 
         wallet.credit(amount);
@@ -162,14 +164,14 @@ public class WalletService {
         log.info("Debiting {} from wallet id: {}", amount, id);
 
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("Amount must be positive");
+            throw new BusinessException("Amount must be positive");
         }
 
         Wallet wallet = walletRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Wallet not found with id: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Wallet not found with id: " + id));
 
         if (!wallet.getIsActive()) {
-            throw new RuntimeException("Cannot debit from inactive wallet");
+            throw new BusinessException("Cannot debit from inactive wallet");
         }
 
         wallet.debit(amount); // Throws exception if insufficient balance
@@ -191,14 +193,14 @@ public class WalletService {
         log.info("Crediting {} to wallet id: {}", amount, id);
 
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("Amount must be positive");
+            throw new BusinessException("Amount must be positive");
         }
 
         Wallet wallet = walletRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Wallet not found with id: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Wallet not found with id: " + id));
 
         if (!wallet.getIsActive()) {
-            throw new RuntimeException("Cannot credit to inactive wallet");
+            throw new BusinessException("Cannot credit to inactive wallet");
         }
 
         wallet.credit(amount);
@@ -217,7 +219,7 @@ public class WalletService {
      */
     public boolean hasSufficientBalance(Long id, BigDecimal amount) {
         Wallet wallet = walletRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Wallet not found with id: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Wallet not found with id: " + id));
         return wallet.hasSufficientBalance(amount);
     }
 

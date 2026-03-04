@@ -11,6 +11,8 @@ import com.jitendra.Wallet.dto.TransactionResponseDTO;
 import com.jitendra.Wallet.entity.Transaction;
 import com.jitendra.Wallet.entity.TransactionStatus;
 import com.jitendra.Wallet.entity.Wallet;
+import com.jitendra.Wallet.exception.BusinessException;
+import com.jitendra.Wallet.exception.ResourceNotFoundException;
 import com.jitendra.Wallet.repository.TransactionRepository;
 import com.jitendra.Wallet.repository.WalletRepository;
 import com.jitendra.Wallet.services.saga.TransferSagaService;
@@ -43,20 +45,20 @@ public class TransactionService {
 
                 // Validate wallets exist
                 Wallet sourceWallet = walletRepository.findById(transactionRequest.getSourceWalletId())
-                                .orElseThrow(() -> new RuntimeException(
+                                .orElseThrow(() -> new ResourceNotFoundException(
                                                 "Source wallet not found with id: "
                                                                 + transactionRequest.getSourceWalletId()));
 
                 // Validate destination wallet exists
                 if (!walletRepository.existsById(transactionRequest.getDestinationWalletId())) {
-                        throw new RuntimeException(
+                        throw new ResourceNotFoundException(
                                         "Destination wallet not found with id: "
                                                         + transactionRequest.getDestinationWalletId());
                 }
 
                 // Validate sufficient balance
                 if (!sourceWallet.hasSufficientBalance(transactionRequest.getAmount())) {
-                        throw new RuntimeException("Insufficient balance in source wallet");
+                        throw new BusinessException("Insufficient balance in source wallet");
                 }
 
                 // Delegate to TransferSagaService which creates Transaction and executes saga
@@ -72,7 +74,8 @@ public class TransactionService {
         public TransactionResponseDTO getTransactionById(Long id) {
                 log.info("Fetching transaction with id: {}", id);
                 Transaction transaction = transactionRepository.findById(id)
-                                .orElseThrow(() -> new RuntimeException("Transaction not found with id: " + id));
+                                .orElseThrow(() -> new ResourceNotFoundException(
+                                                "Transaction not found with id: " + id));
                 return mapToResponseDTO(transaction);
         }
 
@@ -158,7 +161,7 @@ public class TransactionService {
         public TransactionResponseDTO updateTransactionStatus(Long transactionId, TransactionStatus status) {
                 log.info("Updating transaction id: {} with status: {}", transactionId, status);
                 Transaction transaction = transactionRepository.findById(transactionId)
-                                .orElseThrow(() -> new RuntimeException(
+                                .orElseThrow(() -> new ResourceNotFoundException(
                                                 "Transaction not found with id: " + transactionId));
 
                 transaction.setStatus(status);

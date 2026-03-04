@@ -2,7 +2,7 @@ package com.jitendra.Wallet.services;
 
 import org.springframework.stereotype.Service;
 
-
+import com.jitendra.Wallet.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -15,30 +15,31 @@ import com.jitendra.Wallet.dto.UserResponseDTO;
 @Slf4j
 @RequiredArgsConstructor
 public class UserService {
-    
+
     private final UserRepository userRepository;
 
     public UserResponseDTO createUser(UserRequestDTO userRequestDTO) {
         User user = new User();
         user.setName(userRequestDTO.getName());
         user.setEmail(userRequestDTO.getEmail());
-        
+
         User savedUser = userRepository.save(user);
-        log.info("User created successfully with id: {} in database shardwallet{}", savedUser.getId(), (savedUser.getId() % 2+1));
-        
+        log.info("User created successfully with id: {} in database shardwallet{}", savedUser.getId(),
+                (savedUser.getId() % 2 + 1));
+
         return new UserResponseDTO(savedUser.getId(), savedUser.getName(), savedUser.getEmail());
     }
 
     public UserResponseDTO getUserById(Long id) {
         User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("User not found with id: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + id));
         log.info("User fetched with id: {}", id);
         return new UserResponseDTO(user.getId(), user.getName(), user.getEmail());
     }
 
     public UserResponseDTO getUserByName(String name) {
         User user = userRepository.findByName(name)
-                .orElseThrow(() -> new RuntimeException("User not found with name: " + name));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with name: " + name));
         log.info("User fetched with name: {}", name);
         return new UserResponseDTO(user.getId(), user.getName(), user.getEmail());
     }
