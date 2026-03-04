@@ -1,7 +1,6 @@
 package com.jitendra.Wallet.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.github.cdimascio.dotenv.Dotenv;
 import org.flywaydb.core.Flyway;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -27,14 +26,17 @@ public class DataSourceConfig {
     @Bean
     @Primary
     public DataSource dataSource() throws Exception {
-        Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
+        // Read from system properties set once in WalletApplication.main()
+        // (no duplicate Dotenv loading — BUG-04 fix)
+        String postgresUser = System.getProperty("POSTGRES_USER", "postgres");
+        String postgresPass = System.getProperty("POSTGRES_PASS", "admin");
 
-        String postgresUser = dotenv.get("POSTGRES_USER", "postgres");
-        String postgresPass = dotenv.get("POSTGRES_PASS", "admin");
+        // Use env-var-driven URLs instead of hardcoded ones (BUG-03 fix)
+        String url1 = System.getProperty("POSTGRES_DB1_URL", "jdbc:postgresql://localhost:5432/shardwallet1");
+        String url2 = System.getProperty("POSTGRES_DB2_URL", "jdbc:postgresql://localhost:5432/shardwallet2");
 
         System.out.println("Running Flyway migrations directly on physical databases...");
-        String[] urls = { "jdbc:postgresql://localhost:5432/shardwallet1",
-                "jdbc:postgresql://localhost:5432/shardwallet2" };
+        String[] urls = { url1, url2 };
         for (String url : urls) {
             Flyway.configure()
                     .dataSource(url, postgresUser, postgresPass)
@@ -59,6 +61,7 @@ public class DataSourceConfig {
 
         Path tempYaml = Files.createTempFile("sharding-processed", ".yml");
         Files.write(tempYaml, yamlContent.getBytes(StandardCharsets.UTF_8));
+        tempYaml.toFile().deleteOnExit(); // DEVOPS-05 fix: clean up temp file
 
         return org.apache.shardingsphere.driver.api.yaml.YamlShardingSphereDataSourceFactory
                 .createDataSource(tempYaml.toFile());
