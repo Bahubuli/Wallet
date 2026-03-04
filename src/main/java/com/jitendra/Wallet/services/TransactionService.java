@@ -3,6 +3,8 @@ package com.jitendra.Wallet.services;
 import java.time.Instant;
 import java.util.List;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,13 +31,13 @@ public class TransactionService {
         private final WalletRepository walletRepository;
         private final TransferSagaService transferSagaService;
 
+        // =====================================================================
+        // SINGLE-RECORD OPERATIONS — no pagination
+        // =====================================================================
+
         /**
-         * Create a new transaction and initiate saga orchestration
-         * This method handles the complete transaction flow using the saga pattern
-         * 
-         * @param transactionRequest The transaction details
-         * @return TransactionResponseDTO with transaction details including saga
-         *         instance ID
+         * Creates a transaction and initiates saga orchestration.
+         * This is a write operation — pagination is irrelevant.
          */
         public TransactionResponseDTO createTransaction(TransactionRequestDTO transactionRequest) {
                 log.info("Creating transaction from wallet {} to wallet {} with amount {}",
@@ -43,33 +45,26 @@ public class TransactionService {
                                 transactionRequest.getDestinationWalletId(),
                                 transactionRequest.getAmount());
 
-                // Validate wallets exist
                 Wallet sourceWallet = walletRepository.findById(transactionRequest.getSourceWalletId())
                                 .orElseThrow(() -> new ResourceNotFoundException(
                                                 "Source wallet not found with id: "
                                                                 + transactionRequest.getSourceWalletId()));
 
-                // Validate destination wallet exists
                 if (!walletRepository.existsById(transactionRequest.getDestinationWalletId())) {
                         throw new ResourceNotFoundException(
                                         "Destination wallet not found with id: "
                                                         + transactionRequest.getDestinationWalletId());
                 }
 
-                // Validate sufficient balance
                 if (!sourceWallet.hasSufficientBalance(transactionRequest.getAmount())) {
                         throw new BusinessException("Insufficient balance in source wallet");
                 }
 
-                // Delegate to TransferSagaService which creates Transaction and executes saga
                 return transferSagaService.initiateTransfer(transactionRequest);
         }
 
         /**
-         * Get transaction by ID
-         * 
-         * @param id The transaction ID
-         * @return TransactionResponseDTO with transaction details
+         * Fetches one transaction by its ID — no list, no pagination.
          */
         public TransactionResponseDTO getTransactionById(Long id) {
                 log.info("Fetching transaction with id: {}", id);
@@ -80,82 +75,7 @@ public class TransactionService {
         }
 
         /**
-         * Get all transactions for a wallet (both as source and destination)
-         * 
-         * @param walletId The wallet ID
-         * @return List of TransactionResponseDTO
-         */
-        public List<TransactionResponseDTO> getTransactionsByWalletId(Long walletId) {
-                log.info("Fetching transactions for wallet id: {}", walletId);
-                List<Transaction> transactions = transactionRepository.findByWalletId(walletId);
-                return transactions.stream()
-                                .map(this::mapToResponseDTO)
-                                .toList();
-        }
-
-        /**
-         * Get all transactions sent from a specific wallet
-         * 
-         * @param sourceWalletId The source wallet ID
-         * @return List of TransactionResponseDTO
-         */
-        public List<TransactionResponseDTO> getTransactionsBySourceWallet(Long sourceWalletId) {
-                log.info("Fetching transactions from source wallet id: {}", sourceWalletId);
-                List<Transaction> transactions = transactionRepository.findBySourceWalletId(sourceWalletId);
-                return transactions.stream()
-                                .map(this::mapToResponseDTO)
-                                .toList();
-        }
-
-        /**
-         * Get all transactions received at a specific wallet
-         * 
-         * @param destinationWalletId The destination wallet ID
-         * @return List of TransactionResponseDTO
-         */
-        public List<TransactionResponseDTO> getTransactionsByDestinationWallet(Long destinationWalletId) {
-                log.info("Fetching transactions to destination wallet id: {}", destinationWalletId);
-                List<Transaction> transactions = transactionRepository.findByDestinationWalletId(destinationWalletId);
-                return transactions.stream()
-                                .map(this::mapToResponseDTO)
-                                .toList();
-        }
-
-        /**
-         * Get all transactions with a specific status
-         * 
-         * @param status The transaction status
-         * @return List of TransactionResponseDTO
-         */
-        public List<TransactionResponseDTO> getTransactionsByStatus(TransactionStatus status) {
-                log.info("Fetching transactions with status: {}", status);
-                List<Transaction> transactions = transactionRepository.findByStatus(status.name());
-                return transactions.stream()
-                                .map(this::mapToResponseDTO)
-                                .toList();
-        }
-
-        /**
-         * Get all transactions for a specific saga instance
-         * 
-         * @param sagaInstanceId The saga instance ID
-         * @return List of TransactionResponseDTO
-         */
-        public List<TransactionResponseDTO> getTransactionsBySagaInstance(Long sagaInstanceId) {
-                log.info("Fetching transactions for saga instance id: {}", sagaInstanceId);
-                List<Transaction> transactions = transactionRepository.findBySagaInstanceId(sagaInstanceId);
-                return transactions.stream()
-                                .map(this::mapToResponseDTO)
-                                .toList();
-        }
-
-        /**
-         * Update transaction status (used by saga orchestrator during compensation or
-         * completion)
-         * 
-         * @param transactionId The transaction ID
-         * @param status        The new transaction status
-         * @return TransactionResponseDTO with updated transaction details
+         * Updates a transaction's status — single-record mutation, no pagination.
          */
         @Transactional
         public TransactionResponseDTO updateTransactionStatus(Long transactionId, TransactionStatus status) {
@@ -172,77 +92,136 @@ public class TransactionService {
                 return mapToResponseDTO(updatedTransaction);
         }
 
+        // =====================================================================
+        // PAGINATED PUBLIC API METHODS
+        //
+        // WHY PAGINATE:
+        // A busy wallet can have thousands of transactions. Without pagination,
+        // GET /transactions/wallet/42 would load all of them into memory every time.
+        // With Pageable, the repository generates:
+        // SELECT ... WHERE ... LIMIT :size OFFSET :page*size ← row fetch
+        // SELECT COUNT(*) WHERE ... ← for metadata
+        // So only the requested "window" ever leaves the database.
+        //
+        // HOW page.map() WORKS:
+        // The repository returns Page<Transaction> (an entity page).
+        // We need to present DTOs, not entities, to the outside world.
+        // Page.map(fn) applies fn to every item in the page's content list
+        // and returns a new Page<DTO> with all pagination metadata preserved.
+        // It's the idiomatic, single-line way to convert Page<Entity> → Page<DTO>.
+        //
+        // CALLER INTERFACE:
+        // GET /transactions/wallet/42?page=0&size=10&sort=createdDate,desc
+        // Spring MVC auto-populates the Pageable from query params.
+        // =====================================================================
+
         /**
-         * Get all transactions between two wallets
-         * 
-         * @param sourceWalletId      The source wallet ID
-         * @param destinationWalletId The destination wallet ID
-         * @return List of TransactionResponseDTO
+         * GET /transactions/wallet/{walletId} — transactions where wallet is src OR dst
          */
-        public List<TransactionResponseDTO> getTransactionsBetweenWallets(Long sourceWalletId,
-                        Long destinationWalletId) {
-                log.info("Fetching transactions between source wallet id: {} and destination wallet id: {}",
-                                sourceWalletId, destinationWalletId);
-                List<Transaction> transactions = transactionRepository
-                                .findBySourceWalletIdAndDestinationWalletId(sourceWalletId, destinationWalletId);
-                return transactions.stream()
-                                .map(this::mapToResponseDTO)
-                                .toList();
+        public Page<TransactionResponseDTO> getTransactionsByWalletId(Long walletId, Pageable pageable) {
+                log.info("Fetching transactions for wallet id: {} (page {})", walletId, pageable.getPageNumber());
+                return transactionRepository.findByWalletId(walletId, pageable)
+                                .map(this::mapToResponseDTO);
+        }
+
+        /** GET /transactions/source/{sourceWalletId} */
+        public Page<TransactionResponseDTO> getTransactionsBySourceWallet(Long sourceWalletId, Pageable pageable) {
+                log.info("Fetching transactions from source wallet id: {}", sourceWalletId);
+                return transactionRepository.findBySourceWalletId(sourceWalletId, pageable)
+                                .map(this::mapToResponseDTO);
+        }
+
+        /** GET /transactions/destination/{destinationWalletId} */
+        public Page<TransactionResponseDTO> getTransactionsByDestinationWallet(Long destinationWalletId,
+                        Pageable pageable) {
+                log.info("Fetching transactions to destination wallet id: {}", destinationWalletId);
+                return transactionRepository.findByDestinationWalletId(destinationWalletId, pageable)
+                                .map(this::mapToResponseDTO);
+        }
+
+        /** GET /transactions/status?status=PENDING */
+        public Page<TransactionResponseDTO> getTransactionsByStatus(TransactionStatus status, Pageable pageable) {
+                log.info("Fetching transactions with status: {}", status);
+                return transactionRepository.findByStatus(status.name(), pageable)
+                                .map(this::mapToResponseDTO);
         }
 
         /**
-         * Get pending transactions for saga compensation/retry
-         * 
-         * @param sagaInstanceId The saga instance ID
-         * @return List of TransactionResponseDTO with PENDING status
+         * GET /transactions/saga/{sagaInstanceId} — public endpoint.
+         *
+         * IMPORTANT: This is NOT the same call used by the saga orchestrator.
+         * The orchestrator calls findBySagaInstanceId() directly on the repo
+         * as a plain List — unpaginated — because it needs ALL saga steps for
+         * compensation. This method is only for callers querying the HTTP API.
          */
+        public Page<TransactionResponseDTO> getTransactionsBySagaInstance(Long sagaInstanceId, Pageable pageable) {
+                log.info("Fetching transactions for saga instance id: {}", sagaInstanceId);
+                return transactionRepository.findBySagaInstanceId(sagaInstanceId, pageable)
+                                .map(this::mapToResponseDTO);
+        }
+
+        /** GET /transactions/between?sourceWalletId=1&destinationWalletId=2 */
+        public Page<TransactionResponseDTO> getTransactionsBetweenWallets(
+                        Long sourceWalletId, Long destinationWalletId, Pageable pageable) {
+                log.info("Fetching transactions between wallets {} and {}", sourceWalletId, destinationWalletId);
+                return transactionRepository
+                                .findBySourceWalletIdAndDestinationWalletId(sourceWalletId, destinationWalletId,
+                                                pageable)
+                                .map(this::mapToResponseDTO);
+        }
+
+        /**
+         * GET /transactions/wallet/{walletId}/successful
+         *
+         * WHY WE REPLACED THE OLD APPROACH:
+         * Previously: findByWalletId (all rows) → filter in Java → .toList()
+         * That means if wallet has 50,000 transactions and only 100 are SUCCESS,
+         * we still loaded all 50,000 from the DB. Pure waste.
+         *
+         * Now: a single DB query with WHERE (src=? OR dst=?) AND status='SUCCESS'
+         * plus LIMIT/OFFSET. Only SUCCESS rows ever leave the DB at all.
+         */
+        public Page<TransactionResponseDTO> getSuccessfulTransactionsByWallet(Long walletId, Pageable pageable) {
+                log.info("Fetching successful transactions for wallet id: {}", walletId);
+                return transactionRepository.findByWalletIdAndStatus(walletId, TransactionStatus.SUCCESS, pageable)
+                                .map(this::mapToResponseDTO);
+        }
+
+        /**
+         * GET /transactions/wallet/{walletId}/failed — same reasoning as above.
+         */
+        public Page<TransactionResponseDTO> getFailedTransactionsByWallet(Long walletId, Pageable pageable) {
+                log.info("Fetching failed transactions for wallet id: {}", walletId);
+                return transactionRepository.findByWalletIdAndStatus(walletId, TransactionStatus.FAILED, pageable)
+                                .map(this::mapToResponseDTO);
+        }
+
+        // =====================================================================
+        // NON-PAGINATED SAGA-INTERNAL METHOD
+        //
+        // WHY NOT PAGINATED:
+        // The saga orchestrator calls this during compensation to find all
+        // transactions that are still PENDING. There are at most a handful per
+        // saga — paginating them would risk only seeing the first "page" and
+        // silently leaving the rest uncompensated (data corruption).
+        //
+        // This method is called by the saga, NOT by any HTTP controller.
+        // It does not appear in TransactionController at all.
+        // =====================================================================
+
         public List<TransactionResponseDTO> getPendingTransactionsBySagaInstance(Long sagaInstanceId) {
                 log.info("Fetching pending transactions for saga instance id: {}", sagaInstanceId);
-                List<Transaction> transactions = transactionRepository.findBySagaInstanceIdAndStatus(sagaInstanceId,
-                                TransactionStatus.PENDING.name());
-                return transactions.stream()
+                return transactionRepository
+                                .findBySagaInstanceIdAndStatus(sagaInstanceId, TransactionStatus.PENDING.name())
+                                .stream()
                                 .map(this::mapToResponseDTO)
                                 .toList();
         }
 
-        /**
-         * Get successful transactions for a wallet
-         * 
-         * @param walletId The wallet ID
-         * @return List of successful TransactionResponseDTO
-         */
-        public List<TransactionResponseDTO> getSuccessfulTransactionsByWallet(Long walletId) {
-                log.info("Fetching successful transactions for wallet id: {}", walletId);
-                List<Transaction> transactions = transactionRepository.findByWalletId(walletId).stream()
-                                .filter(t -> t.getStatus() == TransactionStatus.SUCCESS)
-                                .toList();
-                return transactions.stream()
-                                .map(this::mapToResponseDTO)
-                                .toList();
-        }
+        // =====================================================================
+        // Helper
+        // =====================================================================
 
-        /**
-         * Get failed transactions for a wallet
-         * 
-         * @param walletId The wallet ID
-         * @return List of failed TransactionResponseDTO
-         */
-        public List<TransactionResponseDTO> getFailedTransactionsByWallet(Long walletId) {
-                log.info("Fetching failed transactions for wallet id: {}", walletId);
-                List<Transaction> transactions = transactionRepository.findByWalletId(walletId).stream()
-                                .filter(t -> t.getStatus() == TransactionStatus.FAILED)
-                                .toList();
-                return transactions.stream()
-                                .map(this::mapToResponseDTO)
-                                .toList();
-        }
-
-        /**
-         * Helper method to map Transaction entity to TransactionResponseDTO
-         * 
-         * @param transaction The transaction entity
-         * @return TransactionResponseDTO
-         */
         private TransactionResponseDTO mapToResponseDTO(Transaction transaction) {
                 return new TransactionResponseDTO(
                                 transaction.getId(),

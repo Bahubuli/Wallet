@@ -1,8 +1,9 @@
 package com.jitendra.Wallet.services;
 
 import java.math.BigDecimal;
-import java.util.List;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -64,12 +65,20 @@ public class WalletService {
      * @param userId The user ID
      * @return List of WalletResponseDTO
      */
-    public List<WalletResponseDTO> getWalletsByUserId(Long userId) {
-        log.info("Fetching wallets for user id: {}", userId);
-        List<Wallet> wallets = walletRepository.findByUserId(userId);
-        return wallets.stream()
-                .map(this::mapToResponseDTO)
-                .toList();
+    /**
+     * GET /wallets/user/{userId}
+     *
+     * Returns a Page of wallets for a user — paginated because in a large system
+     * a user could have many wallets. Without pagination, every call would load
+     * all of them into memory. With Pageable the DB applies LIMIT/OFFSET.
+     *
+     * The non-paginated overload in the repository is kept for internal use
+     * (e.g. checking if any wallets exist for a user in validation logic).
+     */
+    public Page<WalletResponseDTO> getWalletsByUserId(Long userId, Pageable pageable) {
+        log.info("Fetching wallets for user id: {} (page {})", userId, pageable.getPageNumber());
+        return walletRepository.findByUserId(userId, pageable)
+                .map(this::mapToResponseDTO);
     }
 
     /**

@@ -1,7 +1,11 @@
 package com.jitendra.Wallet.controller;
 
-import java.util.List;
+import jakarta.validation.Valid;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -13,13 +17,47 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import com.jitendra.Wallet.dto.TransactionRequestDTO;
 import com.jitendra.Wallet.dto.TransactionResponseDTO;
 import com.jitendra.Wallet.entity.TransactionStatus;
 import com.jitendra.Wallet.services.TransactionService;
 
+/**
+ * TransactionController — all list endpoints are paginated.
+ *
+ * HOW PAGINATION WORKS IN THE CONTROLLER:
+ * ----------------------------------------
+ * Spring MVC automatically reads ?page, ?size, and ?sort from the URL and
+ * populates a Pageable object for us. We use @PageableDefault to set sensible
+ * defaults so callers don't HAVE to pass pagination params — the endpoint
+ * still works as before, but now caps at 20 results instead of returning
+ * everything.
+ *
+ * @PageableDefault(size = 20, sort = "createdDate", direction = DESC)
+ *                       ↑ If the caller passes nothing, we use these. If they
+ *                       DO pass params,
+ *                       their values override these defaults.
+ *
+ *                       CALLER INTERFACE:
+ *                       GET /transactions/wallet/42 → page 0, size 20, sorted
+ *                       by createdDate DESC
+ *                       GET /transactions/wallet/42?size=5&page=1 → page 1,
+ *                       size 5, sorted by createdDate DESC
+ *                       GET /transactions/wallet/42?sort=amount,asc → page 0,
+ *                       size 20, sorted by amount ASC
+ *
+ *                       RESPONSE SHAPE (Page<T>):
+ *                       {
+ *                       "content": [...], ← the actual records
+ *                       "totalElements": 47, ← how many records match in total
+ *                       "totalPages": 3, ← ceil(47 / 20)
+ *                       "number": 0, ← current page (0-based)
+ *                       "size": 20, ← page size used
+ *                       "first": true, ← convenience boolean
+ *                       "last": false ← convenience boolean
+ *                       }
+ */
 @RestController
 @RequestMapping("/transactions")
 @RequiredArgsConstructor
@@ -27,12 +65,14 @@ public class TransactionController {
 
     private final TransactionService transactionService;
 
+    // -------------------------------------------------------------------------
+    // WRITE / SINGLE-RECORD OPERATIONS — no pagination
+    // -------------------------------------------------------------------------
+
     /**
-     * Create a new transaction
-     * This will initiate the saga orchestration for the transaction
-     * 
-     * @param transactionRequest The transaction details
-     * @return Created transaction with saga instance ID
+     * POST /transactions/create
+     * Creates a transaction and starts saga orchestration.
+     * Returns a single TransactionResponseDTO — no pagination needed.
      */
     @PostMapping("/create")
     public ResponseEntity<TransactionResponseDTO> createTransaction(
@@ -42,10 +82,8 @@ public class TransactionController {
     }
 
     /**
-     * Get transaction by ID
-     * 
-     * @param id The transaction ID
-     * @return Transaction details
+     * GET /transactions/{id}
+     * Fetches one specific transaction by ID — no list, no pagination.
      */
     @GetMapping("/{id}")
     public ResponseEntity<TransactionResponseDTO> getTransactionById(@PathVariable Long id) {
@@ -54,76 +92,8 @@ public class TransactionController {
     }
 
     /**
-     * Get all transactions for a wallet (both as source and destination)
-     * 
-     * @param walletId The wallet ID
-     * @return List of transactions
-     */
-    @GetMapping("/wallet/{walletId}")
-    public ResponseEntity<List<TransactionResponseDTO>> getTransactionsByWalletId(@PathVariable Long walletId) {
-        List<TransactionResponseDTO> response = transactionService.getTransactionsByWalletId(walletId);
-        return ResponseEntity.ok(response);
-    }
-
-    /**
-     * Get all transactions sent from a wallet
-     * 
-     * @param sourceWalletId The source wallet ID
-     * @return List of transactions
-     */
-    @GetMapping("/source/{sourceWalletId}")
-    public ResponseEntity<List<TransactionResponseDTO>> getTransactionsBySourceWallet(
-            @PathVariable Long sourceWalletId) {
-        List<TransactionResponseDTO> response = transactionService.getTransactionsBySourceWallet(sourceWalletId);
-        return ResponseEntity.ok(response);
-    }
-
-    /**
-     * Get all transactions received at a wallet
-     * 
-     * @param destinationWalletId The destination wallet ID
-     * @return List of transactions
-     */
-    @GetMapping("/destination/{destinationWalletId}")
-    public ResponseEntity<List<TransactionResponseDTO>> getTransactionsByDestinationWallet(
-            @PathVariable Long destinationWalletId) {
-        List<TransactionResponseDTO> response = transactionService
-                .getTransactionsByDestinationWallet(destinationWalletId);
-        return ResponseEntity.ok(response);
-    }
-
-    /**
-     * Get all transactions with a specific status
-     * 
-     * @param status The transaction status
-     * @return List of transactions
-     */
-    @GetMapping("/status")
-    public ResponseEntity<List<TransactionResponseDTO>> getTransactionsByStatus(
-            @RequestParam TransactionStatus status) {
-        List<TransactionResponseDTO> response = transactionService.getTransactionsByStatus(status);
-        return ResponseEntity.ok(response);
-    }
-
-    /**
-     * Get all transactions for a saga instance
-     * 
-     * @param sagaInstanceId The saga instance ID
-     * @return List of transactions
-     */
-    @GetMapping("/saga/{sagaInstanceId}")
-    public ResponseEntity<List<TransactionResponseDTO>> getTransactionsBySagaInstance(
-            @PathVariable Long sagaInstanceId) {
-        List<TransactionResponseDTO> response = transactionService.getTransactionsBySagaInstance(sagaInstanceId);
-        return ResponseEntity.ok(response);
-    }
-
-    /**
-     * Update transaction status
-     * 
-     * @param transactionId The transaction ID
-     * @param status        The new status
-     * @return Updated transaction
+     * PUT /transactions/{transactionId}/status?status=SUCCESS
+     * Updates a single transaction's status — no pagination.
      */
     @PutMapping("/{transactionId}/status")
     public ResponseEntity<TransactionResponseDTO> updateTransactionStatus(
@@ -133,56 +103,124 @@ public class TransactionController {
         return ResponseEntity.ok(response);
     }
 
+    // -------------------------------------------------------------------------
+    // PAGINATED LIST ENDPOINTS
+    //
+    // Each method adds a Pageable parameter (auto-populated by Spring MVC from
+    // query params) and returns ResponseEntity<Page<TransactionResponseDTO>>.
+    //
+    // The Page wrapper tells the client how many items exist in total and how
+    // many pages there are — without it, the caller can't know when to stop
+    // requesting more pages.
+    // -------------------------------------------------------------------------
+
     /**
-     * Get transactions between two wallets
-     * 
-     * @param sourceWalletId      The source wallet ID
-     * @param destinationWalletId The destination wallet ID
-     * @return List of transactions
+     * GET /transactions/wallet/{walletId}
+     * All transactions where this wallet is source OR destination.
+     * Default: page 0, 20 per page, ordered newest-first.
      */
-    @GetMapping("/between")
-    public ResponseEntity<List<TransactionResponseDTO>> getTransactionsBetweenWallets(
-            @RequestParam Long sourceWalletId,
-            @RequestParam Long destinationWalletId) {
-        List<TransactionResponseDTO> response = transactionService.getTransactionsBetweenWallets(sourceWalletId,
-                destinationWalletId);
-        return ResponseEntity.ok(response);
+    @GetMapping("/wallet/{walletId}")
+    public ResponseEntity<Page<TransactionResponseDTO>> getTransactionsByWalletId(
+            @PathVariable Long walletId,
+            @PageableDefault(size = 20, sort = "createdDate", direction = Sort.Direction.DESC) Pageable pageable) {
+        return ResponseEntity.ok(transactionService.getTransactionsByWalletId(walletId, pageable));
     }
 
     /**
-     * Get pending transactions for a saga instance (for compensation/retry)
-     * 
-     * @param sagaInstanceId The saga instance ID
-     * @return List of pending transactions
+     * GET /transactions/source/{sourceWalletId}
+     * All transactions sent FROM a wallet.
+     */
+    @GetMapping("/source/{sourceWalletId}")
+    public ResponseEntity<Page<TransactionResponseDTO>> getTransactionsBySourceWallet(
+            @PathVariable Long sourceWalletId,
+            @PageableDefault(size = 20, sort = "createdDate", direction = Sort.Direction.DESC) Pageable pageable) {
+        return ResponseEntity.ok(transactionService.getTransactionsBySourceWallet(sourceWalletId, pageable));
+    }
+
+    /**
+     * GET /transactions/destination/{destinationWalletId}
+     * All transactions received AT a wallet.
+     */
+    @GetMapping("/destination/{destinationWalletId}")
+    public ResponseEntity<Page<TransactionResponseDTO>> getTransactionsByDestinationWallet(
+            @PathVariable Long destinationWalletId,
+            @PageableDefault(size = 20, sort = "createdDate", direction = Sort.Direction.DESC) Pageable pageable) {
+        return ResponseEntity.ok(
+                transactionService.getTransactionsByDestinationWallet(destinationWalletId, pageable));
+    }
+
+    /**
+     * GET /transactions/status?status=PENDING
+     * All transactions in a given status, e.g. for monitoring dashboards.
+     */
+    @GetMapping("/status")
+    public ResponseEntity<Page<TransactionResponseDTO>> getTransactionsByStatus(
+            @RequestParam TransactionStatus status,
+            @PageableDefault(size = 20, sort = "createdDate", direction = Sort.Direction.DESC) Pageable pageable) {
+        return ResponseEntity.ok(transactionService.getTransactionsByStatus(status, pageable));
+    }
+
+    /**
+     * GET /transactions/saga/{sagaInstanceId}
+     * All transactions for a given saga — useful for auditing/debugging a saga run.
+     *
+     * NOTE: This is the public HTTP endpoint. It is NOT the saga-internal lookup.
+     * The saga compensation code bypasses this controller entirely and queries
+     * the repository directly without pagination.
+     */
+    @GetMapping("/saga/{sagaInstanceId}")
+    public ResponseEntity<Page<TransactionResponseDTO>> getTransactionsBySagaInstance(
+            @PathVariable Long sagaInstanceId,
+            @PageableDefault(size = 20, sort = "createdDate", direction = Sort.Direction.DESC) Pageable pageable) {
+        return ResponseEntity.ok(transactionService.getTransactionsBySagaInstance(sagaInstanceId, pageable));
+    }
+
+    /**
+     * GET /transactions/saga/{sagaInstanceId}/pending
+     * Returns PENDING transactions for a saga — used to monitor stuck sagas.
+     * This endpoint uses the NON-PAGINATED service method intentionally because:
+     * 1. Pending saga transactions are few (≤ saga step count ≈ 5)
+     * 2. Breaking this into pages would complicate clients that need the full list
      */
     @GetMapping("/saga/{sagaInstanceId}/pending")
-    public ResponseEntity<List<TransactionResponseDTO>> getPendingTransactionsBySagaInstance(
+    public ResponseEntity<java.util.List<TransactionResponseDTO>> getPendingTransactionsBySagaInstance(
             @PathVariable Long sagaInstanceId) {
-        List<TransactionResponseDTO> response = transactionService.getPendingTransactionsBySagaInstance(sagaInstanceId);
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(transactionService.getPendingTransactionsBySagaInstance(sagaInstanceId));
     }
 
     /**
-     * Get successful transactions for a wallet
-     * 
-     * @param walletId The wallet ID
-     * @return List of successful transactions
+     * GET /transactions/between?sourceWalletId=1&destinationWalletId=2
+     * Transactions between two specific wallets — useful for transfer history.
+     */
+    @GetMapping("/between")
+    public ResponseEntity<Page<TransactionResponseDTO>> getTransactionsBetweenWallets(
+            @RequestParam Long sourceWalletId,
+            @RequestParam Long destinationWalletId,
+            @PageableDefault(size = 20, sort = "createdDate", direction = Sort.Direction.DESC) Pageable pageable) {
+        return ResponseEntity.ok(
+                transactionService.getTransactionsBetweenWallets(sourceWalletId, destinationWalletId, pageable));
+    }
+
+    /**
+     * GET /transactions/wallet/{walletId}/successful
+     * Only SUCCESS transactions for a wallet — DB-filtered, then paginated.
      */
     @GetMapping("/wallet/{walletId}/successful")
-    public ResponseEntity<List<TransactionResponseDTO>> getSuccessfulTransactionsByWallet(@PathVariable Long walletId) {
-        List<TransactionResponseDTO> response = transactionService.getSuccessfulTransactionsByWallet(walletId);
-        return ResponseEntity.ok(response);
+    public ResponseEntity<Page<TransactionResponseDTO>> getSuccessfulTransactionsByWallet(
+            @PathVariable Long walletId,
+            @PageableDefault(size = 20, sort = "createdDate", direction = Sort.Direction.DESC) Pageable pageable) {
+        return ResponseEntity.ok(transactionService.getSuccessfulTransactionsByWallet(walletId, pageable));
     }
 
     /**
-     * Get failed transactions for a wallet
-     * 
-     * @param walletId The wallet ID
-     * @return List of failed transactions
+     * GET /transactions/wallet/{walletId}/failed
+     * Only FAILED transactions — useful for failure monitoring and retry logic.
+     * GET /wallet/10/failed?page=2&size=5&sort=amount,asc
      */
     @GetMapping("/wallet/{walletId}/failed")
-    public ResponseEntity<List<TransactionResponseDTO>> getFailedTransactionsByWallet(@PathVariable Long walletId) {
-        List<TransactionResponseDTO> response = transactionService.getFailedTransactionsByWallet(walletId);
-        return ResponseEntity.ok(response);
+    public ResponseEntity<Page<TransactionResponseDTO>> getFailedTransactionsByWallet(
+            @PathVariable Long walletId,
+            @PageableDefault(size = 20, sort = "createdDate", direction = Sort.Direction.DESC) Pageable pageable) {
+        return ResponseEntity.ok(transactionService.getFailedTransactionsByWallet(walletId, pageable));
     }
 }

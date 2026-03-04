@@ -1,8 +1,13 @@
 package com.jitendra.Wallet.controller;
 
 import java.math.BigDecimal;
-import java.util.List;
 
+import jakarta.validation.Valid;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -14,7 +19,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import jakarta.validation.Valid;
 import com.jitendra.Wallet.dto.WalletRequestDTO;
 import com.jitendra.Wallet.dto.WalletResponseDTO;
 import com.jitendra.Wallet.services.WalletService;
@@ -49,13 +53,23 @@ public class WalletController {
     }
 
     /**
-     * Get all wallets for a user
      * GET /wallets/user/{userId}
+     * Returns all wallets belonging to a user — paginated.
+     *
+     * WHY PAGINATED: A user could have many wallets. Returning all of them
+     * on every request would get expensive. With Pageable, the DB applies
+     * LIMIT/OFFSET before sending data back to the app.
+     *
+     * EXAMPLE CALLS:
+     * GET /wallets/user/1 → first 10 wallets
+     * GET /wallets/user/1?page=1&size=10 → next 10
+     * GET /wallets/user/1?sort=balance,desc → sorted by balance
      */
     @GetMapping("/user/{userId}")
-    public ResponseEntity<List<WalletResponseDTO>> getWalletsByUserId(@PathVariable Long userId) {
-        List<WalletResponseDTO> response = walletService.getWalletsByUserId(userId);
-        return ResponseEntity.ok(response);
+    public ResponseEntity<Page<WalletResponseDTO>> getWalletsByUserId(
+            @PathVariable Long userId,
+            @PageableDefault(size = 10, sort = "id", direction = Sort.Direction.ASC) Pageable pageable) {
+        return ResponseEntity.ok(walletService.getWalletsByUserId(userId, pageable));
     }
 
     /**
