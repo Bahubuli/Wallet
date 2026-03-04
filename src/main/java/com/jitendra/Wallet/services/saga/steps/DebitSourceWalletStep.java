@@ -29,7 +29,7 @@ public class DebitSourceWalletStep implements SagaStepInterface {
         BigDecimal amount = new BigDecimal(context.getData().get("amount").toString());
         Long sourceWalletId = Long.valueOf(context.getData().get("sourceWalletId").toString());
 
-        Wallet wallet = walletRepository.findByIdWithLock(sourceWalletId)
+        Wallet wallet = walletRepository.findById(sourceWalletId)
                 .orElseThrow(() -> new RuntimeException("Source Wallet not Found"));
 
         context.put("fromWalletBalanceBeforeDebit", wallet.getBalance());
@@ -57,7 +57,7 @@ public class DebitSourceWalletStep implements SagaStepInterface {
         BigDecimal amount = new BigDecimal(context.getData().get("amount").toString());
         Long sourceWalletId = Long.valueOf(context.getData().get("sourceWalletId").toString());
 
-        Wallet wallet = walletRepository.findByIdWithLock(sourceWalletId)
+        Wallet wallet = walletRepository.findById(sourceWalletId)
                 .orElseThrow(() -> new RuntimeException("Source Wallet not Found"));
 
         context.put("fromWalletBalanceBeforeDebit", wallet.getBalance());

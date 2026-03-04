@@ -136,7 +136,7 @@ public class WalletService {
             throw new IllegalArgumentException("Amount must be positive");
         }
 
-        Wallet wallet = walletRepository.findByIdWithLock(id)
+        Wallet wallet = walletRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Wallet not found with id: " + id));
 
         if (!wallet.getIsActive()) {
@@ -152,8 +152,7 @@ public class WalletService {
 
     /**
      * Debit wallet (used by TransactionService for transfers)
-     * Uses pessimistic locking to ensure consistency
-     * 
+     *
      * @param id     The wallet ID
      * @param amount The amount to debit
      * @return WalletResponseDTO with updated wallet details
@@ -166,7 +165,7 @@ public class WalletService {
             throw new IllegalArgumentException("Amount must be positive");
         }
 
-        Wallet wallet = walletRepository.findByIdWithLock(id)
+        Wallet wallet = walletRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Wallet not found with id: " + id));
 
         if (!wallet.getIsActive()) {
@@ -182,8 +181,7 @@ public class WalletService {
 
     /**
      * Credit wallet (used by TransactionService for transfers)
-     * Uses pessimistic locking to ensure consistency
-     * 
+     *
      * @param id     The wallet ID
      * @param amount The amount to credit
      * @return WalletResponseDTO with updated wallet details
@@ -196,7 +194,7 @@ public class WalletService {
             throw new IllegalArgumentException("Amount must be positive");
         }
 
-        Wallet wallet = walletRepository.findByIdWithLock(id)
+        Wallet wallet = walletRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Wallet not found with id: " + id));
 
         if (!wallet.getIsActive()) {
