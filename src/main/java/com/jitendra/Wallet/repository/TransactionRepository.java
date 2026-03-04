@@ -11,6 +11,7 @@ import org.springframework.stereotype.Repository;
 
 import com.jitendra.Wallet.entity.Transaction;
 import com.jitendra.Wallet.entity.TransactionStatus;
+import com.jitendra.Wallet.entity.TransactionType;
 
 @Repository
 public interface TransactionRepository extends JpaRepository<Transaction, Long> {
@@ -26,7 +27,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
     List<Transaction> findBySagaInstanceId(Long sagaInstanceId);
 
     /** Used by saga internals to find transactions in a specific state. */
-    List<Transaction> findBySagaInstanceIdAndStatus(Long sagaInstanceId, String status);
+    List<Transaction> findBySagaInstanceIdAndStatus(Long sagaInstanceId, TransactionStatus status);
 
     // -------------------------------------------------------------------------
     // PAGINATED — used by the public REST API layer.
@@ -50,7 +51,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
     Page<Transaction> findBySagaInstanceId(Long sagaInstanceId, Pageable pageable);
 
     /** GET /transactions/status?status=PENDING */
-    Page<Transaction> findByStatus(String status, Pageable pageable);
+    Page<Transaction> findByStatus(TransactionStatus status, Pageable pageable);
 
     /** GET /transactions/between?sourceWalletId=1&destinationWalletId=2 */
     Page<Transaction> findBySourceWalletIdAndDestinationWalletId(
@@ -86,25 +87,20 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
 
     List<Transaction> findByDestinationWalletId(Long destinationWalletId);
 
-    List<Transaction> findByStatus(String status);
+    List<Transaction> findByType(TransactionType type);
 
-    List<Transaction> findByType(String type);
+    List<Transaction> findBySourceWalletIdAndStatus(Long sourceWalletId, TransactionStatus status);
 
-    List<Transaction> findBySourceWalletIdAndStatus(Long sourceWalletId, String status);
+    List<Transaction> findByDestinationWalletIdAndStatus(Long destinationWalletId, TransactionStatus status);
 
-    List<Transaction> findByDestinationWalletIdAndStatus(Long destinationWalletId, String status);
+    List<Transaction> findBySourceWalletIdAndType(Long sourceWalletId, TransactionType type);
 
-    List<Transaction> findBySourceWalletIdAndType(Long sourceWalletId, String type);
+    List<Transaction> findByDestinationWalletIdAndType(Long destinationWalletId, TransactionType type);
 
-    List<Transaction> findByDestinationWalletIdAndType(Long destinationWalletId, String type);
-
-    List<Transaction> findByStatusAndType(String status, String type);
+    List<Transaction> findByStatusAndType(TransactionStatus status, TransactionType type);
 
     List<Transaction> findBySourceWalletIdAndDestinationWalletId(Long sourceWalletId, Long destinationWalletId);
 
     @Query("SELECT t FROM Transaction t WHERE t.sourceWalletId = :walletId OR t.destinationWalletId = :walletId")
     List<Transaction> findByWalletId(@Param("walletId") Long walletId);
-
-    @Query("SELECT t FROM Transaction t WHERE t.status = :status")
-    List<Transaction> findByStatus(@Param("status") TransactionStatus status);
 }
