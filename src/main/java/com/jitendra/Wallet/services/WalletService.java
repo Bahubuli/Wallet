@@ -12,6 +12,7 @@ import com.jitendra.Wallet.dto.WalletResponseDTO;
 import com.jitendra.Wallet.entity.Wallet;
 import com.jitendra.Wallet.exception.BusinessException;
 import com.jitendra.Wallet.exception.ResourceNotFoundException;
+import com.jitendra.Wallet.repository.UserRepository;
 import com.jitendra.Wallet.repository.WalletRepository;
 
 import lombok.RequiredArgsConstructor;
@@ -23,6 +24,7 @@ import lombok.extern.slf4j.Slf4j;
 public class WalletService {
 
     private final WalletRepository walletRepository;
+    private final UserRepository userRepository;
 
     /**
      * Create a new wallet for a user
@@ -33,6 +35,11 @@ public class WalletService {
     @Transactional
     public WalletResponseDTO createWallet(WalletRequestDTO walletRequest) {
         log.info("Creating wallet for user id: {}", walletRequest.getUserId());
+
+        // BUG-06 fix: validate user exists before creating wallet
+        if (!userRepository.existsById(walletRequest.getUserId())) {
+            throw new ResourceNotFoundException("User not found with id: " + walletRequest.getUserId());
+        }
 
         Wallet wallet = new Wallet();
         wallet.setUserId(walletRequest.getUserId());

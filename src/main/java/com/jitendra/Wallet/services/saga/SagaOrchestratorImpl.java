@@ -283,8 +283,8 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
 
     @Override
     public SagaInstance getSagaInstance(Long sagaInstanceId) {
-        // Get saga instance implementation
-        return null;
+        return sagaInstanceRepository.findById(sagaInstanceId)
+                .orElseThrow(() -> new RuntimeException("SagaInstance not found with id: " + sagaInstanceId));
     }
 
     @Override
@@ -335,9 +335,13 @@ public class SagaOrchestratorImpl implements SagaOrchestrator {
             }
 
             // Update final saga status
+            //  re-read saga instance to get latest version after
+            // compensation steps modified it, preventing ObjectOptimisticLockingFailureException
             if (allStepsCompensated) {
-                sagaInstance.setStatus(SagaStatus.COMPENSATED);
-                sagaInstanceRepository.save(sagaInstance);
+                SagaInstance refreshedSagaInstance = sagaInstanceRepository.findById(sagaInstanceId)
+                        .orElseThrow(() -> new RuntimeException("SagaInstance not found with id: " + sagaInstanceId));
+                refreshedSagaInstance.setStatus(SagaStatus.COMPENSATED);
+                sagaInstanceRepository.save(refreshedSagaInstance);
                 log.info("Saga compensation completed successfully for sagaInstanceId: {}", sagaInstanceId);
             } else {
                 failSaga(sagaInstanceId);

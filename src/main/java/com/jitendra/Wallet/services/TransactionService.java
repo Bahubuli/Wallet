@@ -142,7 +142,7 @@ public class TransactionService {
         /** GET /transactions/status?status=PENDING */
         public Page<TransactionResponseDTO> getTransactionsByStatus(TransactionStatus status, Pageable pageable) {
                 log.info("Fetching transactions with status: {}", status);
-                return transactionRepository.findByStatus(status.name(), pageable)
+                return transactionRepository.findByStatus(status, pageable)
                                 .map(this::mapToResponseDTO);
         }
 
@@ -212,7 +212,7 @@ public class TransactionService {
         public List<TransactionResponseDTO> getPendingTransactionsBySagaInstance(Long sagaInstanceId) {
                 log.info("Fetching pending transactions for saga instance id: {}", sagaInstanceId);
                 return transactionRepository
-                                .findBySagaInstanceIdAndStatus(sagaInstanceId, TransactionStatus.PENDING.name())
+                                .findBySagaInstanceIdAndStatus(sagaInstanceId, TransactionStatus.PENDING)
                                 .stream()
                                 .map(this::mapToResponseDTO)
                                 .toList();

@@ -23,7 +23,8 @@ import jakarta.persistence.Column;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 import org.hibernate.annotations.ColumnTransformer;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -36,7 +37,8 @@ import java.util.List;
         @Index(name = "idx_saga_type_status", columnList = "saga_type, status")
 })
 @EntityListeners(AuditingEntityListener.class)
-@Data
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
@@ -118,4 +120,28 @@ public class SagaInstance {
     @OneToMany(mappedBy = "sagaInstance", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<SagaStep> steps;
 
+    //  safe equals/hashCode using only id to avoid issues with
+    // mutable fields and lazy-loaded collections
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof SagaInstance that)) return false;
+        return id != null && id.equals(that.id);
+    }
+
+    @Override
+    public int hashCode() {
+        return getClass().hashCode();
+    }
+
+    @Override
+    public String toString() {
+        return "SagaInstance{" +
+                "id=" + id +
+                ", sagaType='" + sagaType + '\'' +
+                ", status=" + status +
+                ", currentStep='" + currentStep + '\'' +
+                ", retryCount=" + retryCount +
+                '}';
+    }
 }
