@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.jitendra.Wallet.dto.TransactionRequestDTO;
 import com.jitendra.Wallet.dto.TransactionResponseDTO;
@@ -32,6 +34,7 @@ public class TransferSagaService {
     private final SagaOrchestrator sagaOrchestrator;
     private final SagaStepFactory sagaStepFactory;
     private final TransactionRepository transactionRepository;
+    private final PlatformTransactionManager transactionManager;
 
     /**
      * Initiates a wallet transfer saga.
@@ -46,56 +49,81 @@ public class TransferSagaService {
                 transactionRequest.getDestinationWalletId(),
                 transactionRequest.getAmount());
 
-        // Create Transaction with PENDING status using builder pattern
-        Instant now = Instant.now();
-        Transaction transaction = Transaction.builder()
-                .description(transactionRequest.getDescription())
-                .sourceWalletId(transactionRequest.getSourceWalletId())
-                .destinationWalletId(transactionRequest.getDestinationWalletId())
-                .amount(transactionRequest.getAmount())
-                .type(transactionRequest.getType())
-                .status(TransactionStatus.PENDING)
-                .sagaInstanceId(-1L) // <--- Temporary dummy ID to pass NOT NULL constraint
-                .createdDate(now)
-                .updatedDate(now)
-                .build();
+        // === Fix #5: Atomic initialization ===
+        // TransactionTemplate ensures Transaction creation + Saga start + linking
+        // all commit or rollback together. Prevents orphaned Transaction records
+        // (with sagaInstanceId = -1) if startSaga() throws.
+        TransactionTemplate txTemplate = new TransactionTemplate(transactionManager);
 
-        Transaction savedTransaction = transactionRepository.save(transaction);
-        log.info("Transaction created with id: {} in PENDING status", savedTransaction.getId());
+        Object[] initResult = txTemplate.execute(status -> {
+            Instant now = Instant.now();
+            Transaction tx = Transaction.builder()
+                    .description(transactionRequest.getDescription())
+                    .sourceWalletId(transactionRequest.getSourceWalletId())
+                    .destinationWalletId(transactionRequest.getDestinationWalletId())
+                    .amount(transactionRequest.getAmount())
+                    .type(transactionRequest.getType())
+                    .status(TransactionStatus.PENDING)
+                    .sagaInstanceId(-1L) // temporary placeholder, replaced once saga starts
+                    .createdDate(now)
+                    .updatedDate(now)
+                    .build();
 
-        // Build saga context with transfer data using builder pattern
-        Map<String, Object> contextData = new HashMap<>();
-        contextData.put("sourceWalletId", transactionRequest.getSourceWalletId());
-        contextData.put("destinationWalletId", transactionRequest.getDestinationWalletId());
-        contextData.put("amount", transactionRequest.getAmount());
-        contextData.put("description",
-                transactionRequest.getDescription() != null ? transactionRequest.getDescription() : "");
-        contextData.put("transactionType", transactionRequest.getType());
-        contextData.put("transactionId", savedTransaction.getId());
-        contextData.put("newStatus", TransactionStatus.SUCCESS.name());
+            tx = transactionRepository.save(tx);
+            log.info("Transaction created with id: {} in PENDING status", tx.getId());
 
-        SagaContext sagaContext = SagaContext.builder()
-                .sagaType(SagaType.TRANSACTION_TRANSFER.name())
-                .data(contextData)
-                .build();
+            Map<String, Object> contextData = new HashMap<>();
+            contextData.put("sourceWalletId", transactionRequest.getSourceWalletId());
+            contextData.put("destinationWalletId", transactionRequest.getDestinationWalletId());
+            contextData.put("amount", transactionRequest.getAmount());
+            contextData.put("description",
+                    transactionRequest.getDescription() != null ? transactionRequest.getDescription() : "");
+            contextData.put("transactionType", transactionRequest.getType());
+            contextData.put("transactionId", tx.getId());
+            contextData.put("newStatus", TransactionStatus.SUCCESS.name());
 
-        // Start the saga (creates saga instance in DB)
-        Long sagaInstanceId = sagaOrchestrator.startSaga(sagaContext);
-        sagaContext.setSagaInstanceId(sagaInstanceId);
+            SagaContext sagaCtx = SagaContext.builder()
+                    .sagaType(SagaType.TRANSACTION_TRANSFER.name())
+                    .data(contextData)
+                    .build();
 
-        // Link transaction to saga
-        savedTransaction.setSagaInstanceId(sagaInstanceId);
-        savedTransaction = transactionRepository.save(savedTransaction);
+            Long sagaId = sagaOrchestrator.startSaga(sagaCtx);
+            sagaCtx.setSagaInstanceId(sagaId);
 
-        log.info("Saga started with id: {}, linked to transaction id: {}", sagaInstanceId, savedTransaction.getId());
+            tx.setSagaInstanceId(sagaId);
+            tx = transactionRepository.save(tx);
 
-        // Execute the saga steps and get final status
+            log.info("Saga started with id: {}, linked to transaction id: {}", sagaId, tx.getId());
+
+            return new Object[] { tx, sagaId, sagaCtx };
+        });
+
+        if (initResult == null) {
+            throw new IllegalStateException("Transaction initialization failed unexpectedly");
+        }
+
+        Transaction savedTransaction = (Transaction) initResult[0];
+        Long sagaInstanceId = (Long) initResult[1];
+        SagaContext sagaContext = (SagaContext) initResult[2];
+
+        // Execute the saga steps (each step commits in its own transaction)
         boolean success = executeTransferSaga(sagaInstanceId, sagaContext);
 
-        // Update transaction status based on saga result
-        savedTransaction = updateTransactionStatus(savedTransaction.getId(), success);
+        // === Fix #6: Remove redundant SUCCESS write ===
+        // On success, the UPDATE_TRANSACTION_STATUS saga step already committed
+        // SUCCESS — writing it again here is redundant and risks race conditions.
+        // On failure, we DO need to set FAILED since no saga step does that.
+        final Long transactionId = savedTransaction.getId();
+        Transaction finalTransaction;
+        if (!success) {
+            finalTransaction = updateTransactionStatus(transactionId, false);
+        } else {
+            finalTransaction = transactionRepository.findById(transactionId)
+                    .orElseThrow(() -> new RuntimeException(
+                            "Transaction not found with id: " + transactionId));
+        }
 
-        return mapToResponseDTO(savedTransaction);
+        return mapToResponseDTO(finalTransaction);
     }
 
     /**
